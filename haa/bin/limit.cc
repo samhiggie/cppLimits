@@ -47,8 +47,8 @@ int main(int ac, char* av[]) {
     using namespace ROOT; 
     using namespace RooFit;
     namespace po = boost::program_options;
-    gErrorIgnoreLevel = kWarning;
-    RooMsgService::instance().setGlobalKillBelow(RooFit::WARNING);
+    gErrorIgnoreLevel = kInfo;
+    RooMsgService::instance().setGlobalKillBelow(RooFit::INFO);
 
     // command line options? 
     po::options_description desc("Allowed options");
@@ -68,6 +68,12 @@ int main(int ac, char* av[]) {
         ("sfrIr,sfrIr", po::value< float >()->default_value(1.5), "second fit range based on multiple of nominal value for the irreducible background")
         ("coeRange,coeRange", po::value< float >()->default_value(10000), "initial range on the coeffs for the fit")
         ("coeRangeIr,coeRangeIr", po::value< float >()->default_value(10000), "initial range on the coeffs for the irreducible background fit")
+        ("sigt,sigt", po::value< string >(), " signal type gaussian, voigtian, double gauss")
+        ("coeRangeSig,coeRangeSig", po::value< vector<float>>()->multitoken(), "initial range on the alpha and sigma")
+        ("SigRanges,SigRanges", po::value< int >()->default_value(0), "per signal template ranges for poi")
+        ("SigCoeRanges,SigCoeRanges", po::value< int >()->default_value(0), "per signal template ranges for poi")
+        ("plots,plots", po::value< int >()->default_value(0), "create pltos?")
+        ("masses,masses", po::value< int >()->default_value(0), "create datacards for all mass points")
         ;
 
     po::positional_options_description p;
@@ -83,6 +89,7 @@ int main(int ac, char* av[]) {
     float initialRange = vm["coeRange"].as<float>();
     float sfrIr = vm["sfrIr"].as<float>();
     float initialRangeIr = vm["coeRangeIr"].as<float>();
+    vector<float> initialRangeSig = vm["coeRangeSig"].as<vector<float>>();
 
     if (vm.count("help")) {
         cout << desc << "\n";
@@ -97,6 +104,7 @@ int main(int ac, char* av[]) {
              << inputFile << "\n";
     }
     string channel = vm["channel"].as<string>();
+    string output = vm["output-file"].as<string>();
 
     vector<string> systematics = { "Nominal","scale_eUp","scale_eDown","scale_m_etalt1p2Up","scale_m_etalt1p2Down",
                "scale_m_eta1p2to2p1Up","scale_m_eta1p2to2p1Down","scale_m_etagt2p1Up","scale_m_etagt2p1Down",
@@ -134,10 +142,14 @@ int main(int ac, char* av[]) {
             ZZshapes[sys]->coeffMax = 1.0 * initialRangeIr;
             ZZshapes[sys]->fillPDFs(vm["irbkgt"].as<string>(),vm["irbkgo"].as<int>(),"irBkg");
             ZZshapes[sys]->fillDataset();
+            //if(sys.compare("Nominal")==0){
             ZZshapes[sys]->fitToData();
             ZZshapes[sys]->finalFitToData("irBkg",sfrIr);
             ZZshapes[sys]->printParamsNLLs();
+            if(vm["plots"].as<int>()==1){
             ZZshapes[sys]->createPlots(vm["irbkgt"].as<string>(),vm["irbkgo"].as<int>(),"irBkg");
+            //}
+            }
         }    
         
         cout<<"done with ZZ ..."<<endl;
@@ -156,7 +168,9 @@ int main(int ac, char* av[]) {
             FFshapes[sys]->fitToData();
             FFshapes[sys]->finalFitToData("Bkg",sfr);
             FFshapes[sys]->printParamsNLLs();
+            if(vm["plots"].as<int>()==1){
             FFshapes[sys]->createPlots(vm["bkgt"].as<string>(),vm["bkgo"].as<int>(),"Bkg");
+            }
         }    
          
         cout<<"done with FF ..."<<endl;
@@ -167,7 +181,8 @@ int main(int ac, char* av[]) {
                    "scale_t_3prongUp","scale_t_3prongDown","scale_t_3prong1pizeroUp","scale_t_3prong1pizeroDown"};
 
         //vector<LimitShape*> signals;
-        map<string,LimitShape*> signals;
+        map<string,LimitShape*> signal;
+        map<string,map<string,LimitShape*>> systematicsignals;
         map<string,LimitShape*> nominal_signals;
         //map<<string,map<string,LimitShapes*>> allsignals;
         vector<string> masses = {
@@ -192,31 +207,47 @@ int main(int ac, char* av[]) {
             for(auto const& sys: systematics){
                 cout<<"working on signal "<<x<<endl;
                 //signals.push_back(new LimitShape(vm,x));
-                signals[sys+"_"+x] = new LimitShape(vm,x);
+                signal[x] = new LimitShape(vm,x);
                 //auto s = sh.second;
-                mass = stoi((signals[sys+"_"+x]->shape_dist).substr(1,2)); 
-                signals[sys+"_"+x]->setsystematic(sys);
-                signals[sys+"_"+x]->connectFile(inputFile);
-                signals[sys+"_"+x]->fillTree(channel+"_inclusive");
-                signals[sys+"_"+x]->fillPDFs("gaussian",mass,signals[sys+"_"+x]->shape_dist);
-                signals[sys+"_"+x]->fillDataset();
-                signals[sys+"_"+x]->fitToData();
-                signals[sys+"_"+x]->finalFitToData("gaussian",2.0);
-                signals[sys+"_"+x]->printParamsNLLs();
-                signals[sys+"_"+x]->createPlots("gaussian",mass,signals[sys+"_"+x]->shape_dist);
-                off->loadShape(sys+"_"+signals[sys+"_"+x]->shape_dist,signals[sys+"_"+x]);
-                if (sys=="Nominal"){
-                    nominal_signals[x] = new LimitShape(vm,x);
-                    nominal_signals[x]->setsystematic(sys);
-                    nominal_signals[x]->connectFile(inputFile);
-                    nominal_signals[x]->fillTree(channel+"_inclusive");
-                    nominal_signals[x]->fillPDFs("gaussian",mass,nominal_signals[x]->shape_dist);
-                    nominal_signals[x]->fillDataset();
-                    nominal_signals[x]->fitToData();
-                    nominal_signals[x]->finalFitToData("gaussian",2.0);
-                    nominal_signals[x]->printParamsNLLs();
-                    nominal_signals[x]->createPlots("gaussian",mass,nominal_signals[x]->shape_dist);
+                mass = stoi((signal[x]->shape_dist).substr(1,2)); 
+                signal[x]->coeffvect = initialRangeSig;
+                signal[x]->setsystematic(sys);
+                signal[x]->connectFile(inputFile);
+                signal[x]->fillTree(channel+"_inclusive");
+                //signal[x]->rescaleFinalweight(10.0); // this doesn't work... memory leak problems
+                //signal[x]->fillPDFs("gaussian",mass,signal[x]->shape_dist);
+                signal[x]->fillPDFs(vm["sigt"].as<string>(),mass,signal[x]->shape_dist);
+                signal[x]->fillDataset();
+                //don't need to fit the systematics... they are rate parameters 
+                signal[x]->fitToData();
+                //signal[x]->finalFitToData("gaussian",2.0);
+                signal[x]->finalFitToData(vm["sigt"].as<string>(),2.0);
+                signal[x]->printParamsNLLs();
+                if(vm["plots"].as<int>()==1){
+                    signal[x]->createPlots(vm["sigt"].as<string>(),mass,signal[x]->shape_dist);
                 }
+                off->loadShape(sys+"_"+signal[x]->shape_dist,signal[x]);
+                systematicsignals[sys][x] = signal[x];
+                //if (sys=="Nominal"){
+                //    nominal_signals[x] = new LimitShape(vm,x);
+                //    nominal_signals[x]->coeffvect = initialRangeSig;
+                //    nominal_signals[x]->setsystematic(sys);
+                //    nominal_signals[x]->connectFile(inputFile);
+                //    nominal_signals[x]->fillTree(channel+"_inclusive");
+                //    //nominal_signals[x]->rescaleFinalweight(10.0); // this doesn't work... memory leak problems
+                //    //nominal_signals[x]->fillPDFs("gaussian",mass,nominal_signals[x]->shape_dist);
+                //    nominal_signals[x]->fillPDFs(vm["sigt"].as<string>(),mass,nominal_signals[x]->shape_dist);
+                //    nominal_signals[x]->fillDataset();
+                //    nominal_signals[x]->fitToData();
+                //    //nominal_signals[x]->finalFitToData("gaussian",2.0);
+                //    nominal_signals[x]->finalFitToData(vm["sigt"].as<string>(),2.0);
+                //    nominal_signals[x]->printParamsNLLs();
+                //    if(vm["plots"].as<int>()==1){
+                //    //nominal_signals[x]->createPlots("gaussian",mass,nominal_signals[x]->shape_dist);
+                //    nominal_signals[x]->createPlots(vm["sigt"].as<string>(),mass,nominal_signals[x]->shape_dist);
+                //    }
+                //    off->loadShape(sys+"_"+nominal_signals[x]->shape_dist,nominal_signals[x]);
+                //}
             }
         } 
 
@@ -224,12 +255,12 @@ int main(int ac, char* av[]) {
         
         for(auto const& sys: systematics){
             off->loadShape(sys+"_irBkg",ZZshapes[sys]);
+            off->interpolateParameters(vm["sigt"].as<string>(),systematicsignals[sys],sys); //this will import signal spline function to workspace
         }
         off->loadShape("Nominal_Bkg",FFshapes["Nominal"]);
 
 
-        off->createTxtfile();
-        off->printDatacard(false);
+
 
         off->wsp->import(*(data->data));
 
@@ -237,17 +268,29 @@ int main(int ac, char* av[]) {
         //    off->wsp->import(*(ZZshapes[sys]->pdf[vm["irbkgt"].as<string>()+to_string(vm["irbkgo"].as<int>())]));
         //}
 
-        ZZshapes["Nominal"]->pdf[vm["irbkgt"].as<string>()+to_string(vm["irbkgo"].as<int>())]->SetName(("irBkg_"+channel).c_str());
-        FFshapes["Nominal"]->pdf[vm["bkgt"].as<string>()+to_string(vm["bkgo"].as<int>())]->SetName(("Bkg_"+channel).c_str());
+        ZZshapes["Nominal"]->pdf[vm["irbkgt"].as<string>()+to_string(vm["irbkgo"].as<int>())]->SetName(("irBkg_"+output).c_str());
+        FFshapes["Nominal"]->pdf[vm["bkgt"].as<string>()+to_string(vm["bkgo"].as<int>())]->SetName(("Bkg_"+output).c_str());
+        ZZshapes["Nominal"]->norm->SetName(("irBkg_"+output+"_norm").c_str());
+        FFshapes["Nominal"]->norm->SetName(("Bkg_"+output+"_norm").c_str());
 
         off->wsp->import(*(ZZshapes["Nominal"]->pdf[vm["irbkgt"].as<string>()+to_string(vm["irbkgo"].as<int>())]));
         off->wsp->import(*(FFshapes["Nominal"]->pdf[vm["bkgt"].as<string>()+to_string(vm["bkgo"].as<int>())]));
-        off->interpolateParameters(nominal_signals); //this will import signal spline function to workspace
+
+        //off->interpolateParameters("gaussian",nominal_signals); //this will import signal spline function to workspace
+        //off->interpolateParameters(vm["sigt"].as<string>(),nominal_signals); //this will import signal spline function to workspace
+        off->wsp->import(*(ZZshapes["Nominal"]->norm));
+        off->wsp->import(*(FFshapes["Nominal"]->norm));
 
         off->wsp->writeToFile(
             ((off->outputdir)+"/"+"HToAAWorkspace_full_"+(off->output)+".root").c_str()
             );
 
+        off->createTxtfile();
+        off->printDatacard(false);
+        if(vm["masses"].as<int>()==1){
+            off->createTxtfilePerMass();
+            off->printDatacardPerMass(false);
+        }
         //for(auto const& pdf: FF){
         //    off->wsp->import(pdf.second);
         //}
@@ -257,15 +300,17 @@ int main(int ac, char* av[]) {
     }
     else{
     
+        /*//commenting out other templates 
+
         LimitShape * ZZ = new LimitShape(vm,"irBkg");
         ZZ->setsystematic("Nominal");
         ZZ->connectFile(inputFile);
         ZZ->fillTree(channel+"_inclusive");
         ZZ->coeffMin = -1.0 * initialRangeIr;
         ZZ->coeffMax = 1.0 * initialRangeIr;
-        ZZ->fillPDFs(vm["irbkgt"].as<string>(),1,"irBkg");
+        //ZZ->fillPDFs(vm["irbkgt"].as<string>(),1,"irBkg");
         ZZ->fillPDFs(vm["irbkgt"].as<string>(),2,"irBkg");
-        ZZ->fillPDFs(vm["irbkgt"].as<string>(),3,"irBkg");
+        //ZZ->fillPDFs(vm["irbkgt"].as<string>(),3,"irBkg");
         //ZZ->fillPDFs(vm["irbkgt"].as<string>(),4,"irBkg");
         //ZZ->fillPDFs(vm["irbkgt"].as<string>(),5,"irBkg");
         //ZZ->fillPDFs(vm["irbkgt"].as<string>(),6,"irBkg");
@@ -275,11 +320,13 @@ int main(int ac, char* av[]) {
         //ZZ->scanFitToData("irBkg");
         ZZ->printParamsNLLs();
         //ZZ->createPlots(vm["irbkgt"].as<string>(),1,"irBkg");
-        //ZZ->createPlots(vm["irbkgt"].as<string>(),2,"irBkg");
+        ZZ->createPlots(vm["irbkgt"].as<string>(),2,"irBkg");
         //ZZ->createPlots(vm["irbkgt"].as<string>(),3,"irBkg");
         //ZZ->createPlots(vm["irbkgt"].as<string>(),4,"irBkg");
         //ZZ->createPlots(vm["irbkgt"].as<string>(),5,"irBkg");
         //ZZ->createPlots(vm["irbkgt"].as<string>(),6,"irBkg");
+        
+        cout<<"done with ZZ ..."<<endl;
 
         LimitShape * FF = new LimitShape(vm,"Bkg");
         FF->setsystematic("Nominal");
@@ -287,9 +334,9 @@ int main(int ac, char* av[]) {
         FF->fillTree(channel+"_inclusive");
         FF->coeffMin = -1.0 * initialRange;
         FF->coeffMax = 1.0 * initialRange;
-        FF->fillPDFs(vm["bkgt"].as<string>(),1,"Bkg");
+        //FF->fillPDFs(vm["bkgt"].as<string>(),1,"Bkg");
         FF->fillPDFs(vm["bkgt"].as<string>(),2,"Bkg");
-        FF->fillPDFs(vm["bkgt"].as<string>(),3,"Bkg");
+        //FF->fillPDFs(vm["bkgt"].as<string>(),3,"Bkg");
         //FF->fillPDFs(vm["bkgt"].as<string>(),4,"Bkg");
         //FF->fillPDFs(vm["bkgt"].as<string>(),5,"Bkg");
         //FF->fillPDFs(vm["bkgt"].as<string>(),6,"Bkg");
@@ -300,22 +347,67 @@ int main(int ac, char* av[]) {
         //FF->recursiveFitToData("Bkg");
         FF->printParamsNLLs();
         //FF->createPlots(vm["bkgt"].as<string>(),1,"Bkg");
-        //FF->createPlots(vm["bkgt"].as<string>(),2,"Bkg");
+        FF->createPlots(vm["bkgt"].as<string>(),2,"Bkg");
         //FF->createPlots(vm["bkgt"].as<string>(),3,"Bkg");
         //FF->createPlots(vm["bkgt"].as<string>(),4,"Bkg");
         //FF->createPlots(vm["bkgt"].as<string>(),5,"Bkg");
         //FF->createPlots(vm["bkgt"].as<string>(),6,"Bkg");
 
+        cout<<"done with FF ..."<<endl;
+        *///end comment
+
         LimitShape * signal = new LimitShape(vm,"a40");
         signal->setsystematic("Nominal");
         signal->connectFile(inputFile);
+
+        //not ready yet
+        signal->coeffvect = initialRangeSig;
+
         signal->fillTree(channel+"_inclusive");
-        signal->fillPDFs("gaussian",40,"a40");
+        //signal->fillPDFs("gaussian",40,"a40");
+        signal->fillPDFs(vm["sigt"].as<string>(),40,"a40");
         signal->fillDataset();
         signal->fitToData();
-        signal->finalFitToData("gaussian",2.0);
+        //signal->finalFitToData("gaussian",2.0);
+        signal->finalFitToData(vm["sigt"].as<string>(),2.0);
         signal->printParamsNLLs();
-        signal->createPlots("gaussian",40,"a40");
+        //signal->createPlots("gaussian",40,"a40");
+        signal->createPlots(vm["sigt"].as<string>(),40,"a40");
+
+        LimitShape * signal_a20 = new LimitShape(vm,"a20");
+        signal_a20->setsystematic("Nominal");
+        signal_a20->connectFile(inputFile);
+
+        //not ready yet
+        signal_a20->coeffvect = initialRangeSig;
+
+        signal_a20->fillTree(channel+"_inclusive");
+        //signal_a20->fillPDFs("gaussian",20,"a20");
+        signal_a20->fillPDFs(vm["sigt"].as<string>(),20,"a20");
+        signal_a20->fillDataset();
+        signal_a20->fitToData();
+        //signal_a20->finalFitToData("gaussian",2.0);
+        signal_a20->finalFitToData(vm["sigt"].as<string>(),2.0);
+        signal_a20->printParamsNLLs();
+        //signal_a20->createPlots("gaussian",20,"a20");
+        signal_a20->createPlots(vm["sigt"].as<string>(),20,"a20");
+
+        LimitShape * signal_a60 = new LimitShape(vm,"a60");
+        signal_a60->setsystematic("Nominal");
+        signal_a60->connectFile(inputFile);
+        //not ready yet
+        signal_a60->coeffvect = initialRangeSig;
+
+        signal_a60->fillTree(channel+"_inclusive");
+        //signal_a60->fillPDFs("gaussian",60,"a60");
+        signal_a60->fillPDFs(vm["sigt"].as<string>(),60,"a60");
+        signal_a60->fillDataset();
+        signal_a60->fitToData();
+        //signal_a60->finalFitToData("gaussian",2.0);
+        signal_a60->finalFitToData(vm["sigt"].as<string>(),2.0);
+        signal_a60->printParamsNLLs();
+        //signal_a60->createPlots("gaussian",60,"a60");
+        signal_a60->createPlots(vm["sigt"].as<string>(),60,"a60");
 
     }
    

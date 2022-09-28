@@ -34,6 +34,9 @@
 #include "RooDataSet.h"
 #include "RooAbsPdf.h"
 #include "RooGaussian.h"
+#include "RooGaussModel.h"
+#include "RooAddModel.h"
+#include "RooVoigtian.h"
 #include "RooFitResult.h"
 #include "RooBernstein.h"
 #include "RooPolynomial.h"
@@ -80,7 +83,7 @@ using namespace RooFit;
 #include <vector>
 #include <cassert>
 
-//ignore RooFit mass output
+#include "plot.h"
 
 class LimitShape{
     public:
@@ -92,6 +95,7 @@ class LimitShape{
         //po::options_description *shape_desc;
         Int_t            treeNum;
         TTree            *ttree;
+        TTree            *newtree;//for normalization rescaling
         string           shape_name;
         string           shape_dist;
         string           type="shapetype";//RooFit Pdf class
@@ -115,9 +119,12 @@ class LimitShape{
         float rangeMax  = 0.0;
         float coeffMin  = -10000.0;
         float coeffMax  =  10000.0;
+        vector<float> coeffvect;
         int maxscans  =  20;
-        float shape_binning  = 16;
+        //float shape_binning  = 16;
+        float shape_binning  = 4;
         int recursion = 0;
+        int year = 2017;
 
         //current variables - make this into a class later
         //datatype
@@ -146,6 +153,7 @@ class LimitShape{
         void connectFile(string path);
         void setsystematic(string sys);
         int  fillTree(string pathtotree);
+        void rescaleFinalweight(float num);
         void fillPDFs(string type,int order,string dist);
         void fillDataset();
         void fitToData();
@@ -174,6 +182,7 @@ LimitShape::LimitShape(po::variables_map vm,
 
     output = shape_vm["output-file"].as<std::string>();
     outputdir = shape_vm["output-dir"].as<std::string>();
+    year = stoi(output.substr(0,4));
     channel = shape_vm["channel"].as<std::string>();
     cout<<"creating directory "<<outputdir<<endl;
     //output = arglist["output-file"].as<std::string>();
@@ -186,11 +195,11 @@ LimitShape::LimitShape(po::variables_map vm,
     }
   
   
-    system("dir");
+    //system("dir");
 
     //setting the vars
     poi = new RooRealVar("mll","m_{#mu#mu}", 18, 62);
-    norm = new RooRealVar("norm",   "Normalization",1.0,0.0,10);
+    norm = new RooRealVar("norm",   "Normalization",1.0,0.0,1000000.0);
     eventweight = new RooRealVar("weight",   "weight",0.0,5.0);
 
 }
@@ -205,7 +214,7 @@ void LimitShape::connectFile(string path)
     //tfile->TFile::Open(path.c_str(),"read");
     tfile = new TFile(path.c_str(),"READ");
     tfile->cd();
-    tfile->ls();
+    //tfile->ls();
 
     return;
 }
@@ -224,6 +233,28 @@ int LimitShape::fillTree(string pathtotree)
     cout<<"ttree entries "<<ttree->GetEntries()<<endl;
     return 1;
     }
+}
+void LimitShape::rescaleFinalweight(float num){ // this doesn't work memory leak problem 
+    cout<<"must fill tree first"<<endl;
+    Double_t finalweight;
+    ttree->SetBranchAddress("finalweight",&finalweight);
+
+    TTree * newtree = ttree->CloneTree(0);
+    ttree->GetEntry(0);
+    cout<<"finalweight before 1st entry "<<finalweight;
+    for (int ent = 0; ent<ttree->GetEntries();ent++){
+
+        ttree->GetEntry(ent);
+        finalweight=finalweight*num;
+        newtree->Fill();
+    }   
+    
+    newtree->GetEntry(0);
+    cout<<"finalweight after 1st entry "<<finalweight;
+    ttree = newtree->CloneTree(0);
+    
+    
+    return;
 }
 void LimitShape::setsystematic(string sys)
 {
@@ -347,6 +378,173 @@ void LimitShape::fillPDFs(string type,int order,string dist)
         //        )
         //    );
         }
+    if(type.compare("voigtian")==0){
+        cout<<"mass num? "<<shape_dist.substr(1,2)<<endl;
+        float mass = stoi((shape_dist.substr(1,2)));
+        rangeMin = mass - 2.0;
+        rangeMax = mass + 2.0;
+        if(shape_vm["SigRanges"].as<int>()==1){
+        if(mass==15){ rangeMin=14; rangeMax=25;}
+        if(mass==20){ rangeMin=18; rangeMax=40;}
+        if(mass==25){ rangeMin=18; rangeMax=40;}
+        if(mass==30){ rangeMin=25; rangeMax=50;}
+        if(mass==35){ rangeMin=25; rangeMax=45;}
+        if(mass==40){ rangeMin=38; rangeMax=42;}
+        if(mass==45){ rangeMin=35; rangeMax=55;}
+        if(mass==50){ rangeMin=40; rangeMax=60;}
+        if(mass==55){ rangeMin=40; rangeMax=66;}
+        if(mass==60){ rangeMin=40; rangeMax=66;}
+        poi->setRange(rangeMin,rangeMax);
+        }
+        if(shape_vm["SigCoeRanges"].as<int>()==1){
+                        //vect0 = alpha vect1=sigma
+        if(mass==15){ coeffvect[0]=0.15; coeffvect[1]=0.15;}
+        if(mass==20){ coeffvect[0]=0.15; coeffvect[1]=0.15;}
+        if(mass==25){ coeffvect[0]=0.18; coeffvect[1]=0.18;}
+        if(mass==30){ coeffvect[0]=0.21; coeffvect[1]=0.21;}
+        if(mass==35){ coeffvect[0]=0.24; coeffvect[1]=0.24;}
+        if(mass==40){ coeffvect[0]=0.27; coeffvect[1]=0.27;}
+        if(mass==45){ coeffvect[0]=0.30; coeffvect[1]=0.30;}
+        if(mass==50){ coeffvect[0]=0.33; coeffvect[1]=0.33;}
+        if(mass==55){ coeffvect[0]=0.36; coeffvect[1]=0.36;}
+        if(mass==60){ coeffvect[0]=0.39; coeffvect[1]=0.39;}
+        }
+        shape_binning = 25;
+        tempvector_coeffs->Add(
+                new RooRealVar(
+                (TString)("mean_"+shape_dist+"_"+systematic+"_"+output),
+                (TString)("mean_"+shape_dist+"_"+systematic+"_"+output),
+                            //stof(shape_dist.substr(1,2)),
+                            //stof(shape_dist.substr(1,2))-2.0,
+                            //stof(shape_dist.substr(1,2))+2.0)
+                            0.5*(rangeMin+rangeMax),
+                            rangeMin,
+                            rangeMax)
+                );
+        tempvector_coeffs->Add(
+                new RooRealVar(
+                (TString)("alpha_"+shape_dist+"_"+systematic+"_"+output),
+                (TString)("alpha_"+shape_dist+"_"+systematic+"_"+output),
+                            0.1,
+                            0.01,
+                            //30.0)
+                            coeffvect[0])
+                            //8.0)
+                            //0.3,
+                            //0.1,
+                            //0.5)
+                );
+        tempvector_coeffs->Add(
+                new RooRealVar(
+                (TString)("sigma_"+shape_dist+"_"+systematic+"_"+output),
+                (TString)("sigma_"+shape_dist+"_"+systematic+"_"+output),
+                            1.0,
+                            0.01,
+                            //30.0)
+                            coeffvect[1])
+                            //0.3,
+                            //0.1,
+                            //0.5)
+                );
+        coeffs[type+to_string(order)] = tempvector_coeffs; //empty vector of type RooRealVar 
+
+        pdf[type+to_string(order)] = new RooVoigtian(
+                                            (TString)("sigfit"),
+                                            (TString)("sigfit"),
+                                            *poi,
+                                            *((RooRealVar*) tempvector_coeffs->At(0)),
+                                            *((RooRealVar*) tempvector_coeffs->At(1)),
+                                            *((RooRealVar*) tempvector_coeffs->At(2))
+                                            );
+
+        //pdf->insert(
+        //    pair<string,RooGaussian> (
+        //        (type+to_string(order)),
+        //        new RooGaussian(
+        //            (TString)("sigfit"),
+        //            (TString)("sigfit"),
+        //            &poi,
+        //            tempvector_coeffs[0],
+        //            tempvector_coeffs[1]
+        //            )
+        //        )
+        //    );
+
+
+    }
+    if(type.compare("doublegaussian")==0){
+        cout<<"mass num? "<<shape_dist.substr(1,2)<<endl;
+        float mass = stoi((shape_dist.substr(1,2)));
+        rangeMin = mass - 2.0;
+        rangeMax = mass + 2.0;
+        shape_binning = 25;
+        tempvector_coeffs->Add(
+                new RooRealVar(
+                (TString)("mean_"+shape_dist+"_"+systematic+"_"+output),
+                (TString)("mean_"+shape_dist+"_"+systematic+"_"+output),
+                            stof(shape_dist.substr(1,2)),
+                            stof(shape_dist.substr(1,2))-2.0,
+                            stof(shape_dist.substr(1,2))+2.0)
+                );
+        tempvector_coeffs->Add(
+                new RooRealVar(
+                (TString)("sigma_1_"+shape_dist+"_"+systematic+"_"+output),
+                (TString)("sigma_1_"+shape_dist+"_"+systematic+"_"+output),
+                            1.0,
+                            0.01,
+                            //30.0)
+                            coeffvect[0])
+                            //0.3,
+                            //0.1,
+                            //0.5)
+                );
+        tempvector_coeffs->Add(
+                new RooRealVar(
+                (TString)("sigma_2_"+shape_dist+"_"+systematic+"_"+output),
+                (TString)("sigma_2_"+shape_dist+"_"+systematic+"_"+output),
+                            1.0,
+                            0.01,
+                            //30.0)
+                            coeffvect[1])
+                            //0.3,
+                            //0.1,
+                            //0.5)
+                );
+        coeffs[type+to_string(order)] = tempvector_coeffs; //empty vector of type RooRealVar 
+        RooGaussModel * temppdf_1 = new RooGaussModel(
+                                            (TString)("sigfit_1"),
+                                            (TString)("sigfit_1"),
+                                            *poi,
+                                            *((RooRealVar*) tempvector_coeffs->At(0)),
+                                            *((RooRealVar*) tempvector_coeffs->At(1))
+                                            );
+        RooGaussModel * temppdf_2 = new RooGaussModel(
+                                            (TString)("sigfit_2"),
+                                            (TString)("sigfit_2"),
+                                            *poi,
+                                            *((RooRealVar*) tempvector_coeffs->At(0)),
+                                            *((RooRealVar*) tempvector_coeffs->At(2))
+                                            );
+        RooRealVar * frac_pdfs = new RooRealVar("frac_pdfs","fraction between gauss 1 and 2",0.5);
+        RooRealVar * norm_1 = new RooRealVar("norm_1","events in sig_1",1,10000);
+        RooRealVar * norm_2 = new RooRealVar("norm_2","events in sig_2",1,10000);
+
+        pdf[type+to_string(order)] = new RooAddModel(
+                                            (TString)("sigfit"),
+                                            (TString)("sigfit"),
+                                            RooArgList(*temppdf_1,*temppdf_2),
+                                            *frac_pdfs
+                                            );
+
+        //pdf[type+to_string(order)] = new RooAddPdf(
+        //                                    (TString)("sigfit"),
+        //                                    (TString)("sigfit"),
+        //                                    RooArgList(*temppdf_1,*temppdf_2),
+        //                                    RooArgList(*norm_1, *norm_2)
+        //                                    );
+
+
+    }
 
     if(type.compare("gaussian")==0){
         cout<<"mass num? "<<shape_dist.substr(1,2)<<endl;
@@ -418,13 +616,15 @@ void LimitShape::fillDataset()
 void LimitShape::fitToData()
 {
     for(auto const& x: pdf){
-        cout<<"working on pdf "<<(x.first).c_str()<<endl;
+        //used to be at line 482 in the fit ToData function
+        cout<<"creating plotting spaces"<<endl;
         canvas[x.first] = new TCanvas(("canvas_"+shape_name).c_str(),("canvas_"+shape_name).c_str(),600,600);
         poi->setRange(rangeMin,rangeMax);
         plotframe[x.first] = poi->frame();
         plotframe[x.first]->SetAxisRange(rangeMin,rangeMax);
-        //data->plotOn(plotframe[x.first],Range(rangeMin,rangeMax),Binning(shape_binning));
-        data->plotOn(plotframe[x.first],Range(rangeMin,rangeMax));
+        cout<<"working on pdf "<<(x.first).c_str()<<endl;
+
+        //data->plotOn(plotframe[x.first],Range(rangeMin,rangeMax));
         fitresults[x.first] = x.second->fitTo(
                                 *data,Range(rangeMin,rangeMax), 
                                 Minimizer("Minuit2","migrad"),
@@ -733,7 +933,8 @@ void LimitShape::finalFitToData(string type,float sfr)
         //                        Minimizer("Minuit2","migrad"),
         //                        Save()
         //                    );
-        if(type.compare("gaussian")!=0){
+        if(type.compare("Bkg")==0 || type.compare("irBkg")==0){
+        //if(type.compare("gaussian")!=0){
         for(const auto&& obj: *coeffs[x.first]){
                 //cout<<"object name "<<obj->GetName()<<endl; 
                 //cout<<"object class name "<<obj->ClassName()<<endl; 
@@ -764,8 +965,9 @@ void LimitShape::finalFitToData(string type,float sfr)
                 //return;
             }
 
-        if(type.compare("gaussian")==0){
-        cout<<"running gaussian final fit"<<endl;
+        //if(type.compare("gaussian")==0 || type.compare("voigtian")==0){
+        if(type.compare("gaussian")==0 || type.compare("voigtian")==0 || type.compare("doublegaussian")==0){
+        cout<<"running signal final fit"<<endl;
         for(const auto&& obj: *coeffs[x.first]){
             cout<<"object name "<<obj->GetName()<<endl; 
             cout<<"object class name "<<obj->ClassName()<<endl; 
@@ -784,12 +986,15 @@ void LimitShape::finalFitToData(string type,float sfr)
                     }
                 }
             }
+
+
         finalfitresults[x.first] = x.second->fitTo(
                                 *data,Range(rangeMin,rangeMax), 
                                 Minimizer("Minuit2","migrad"),
                                 Save()
                             );
         finalfitresults[x.first]->Print();
+
     }
     
 
@@ -831,14 +1036,25 @@ void LimitShape::createPlots(string type,int order,string dist)
 {
     gPad->SetLeftMargin(0.15);
     string key = type+to_string(order);//key for the map
+    bool doRatio = 0;
+    TPaveText lumi=add_lumi(year,doRatio);
+    TPaveText cms=add_CMS(doRatio);
+    TPaveText pre=add_Preliminary(channel, doRatio);
+    //TPaveText id = TPaveText(0.7,0.5,0.7+0.30,0.5+0.16,"NDC"); // mid right
+    TPaveText id = TPaveText(0.3,0.7,0.3+0.30,0.7+0.16,"NDC");
+    
+
+    //data->plotOn(plotframe[key],Range(rangeMin,rangeMax),Binning(shape_binning));
+    //data->plotOn(plotframe[key],Range(rangeMin,rangeMax));
+
     cout<<"type order ? for plots "<<key<<endl;
     plotframe[key]->SetAxisRange(rangeMin,rangeMax);
-    plotframe[key]->SetTitle(("#mu#mu for "+dist+" "+output).c_str());
+    //plotframe[key]->SetTitle(("#mu#mu for "+dist+" "+output).c_str());
+    plotframe[key]->SetTitle("");
     plotframe[key]->GetYaxis()->SetTitleOffset(1.6);
     plotframe[key]->GetXaxis()->SetTitle("M_{#mu#mu}");
     TGaxis::SetMaxDigits(2);
-    //data->plotOn(plotframe[key],Binning(shape_binning),Range(rangeMin,rangeMax));
-    data->plotOn(plotframe[key],Range(rangeMin,rangeMax));
+    //data->plotOn(plotframe[key],Range(rangeMin,rangeMax));
     
     //pdf[key]->plotOn(plotframe[key],
     //        VisualizeError(*finalfitresults[key],1.0,kFALSE),
@@ -846,30 +1062,52 @@ void LimitShape::createPlots(string type,int order,string dist)
     //        //DrawOption("F"),
     //        FillColor(kOrange)
     //        );
-    if(type.compare("gaussian")==0){
-    cout<<"Plotting gaussian"<<endl;
+    //if(type.compare("gaussian")==0||type.compare("voigtian")==0){
+    if(type.compare("gaussian")==0 || type.compare("voigtian")==0 || type.compare("doublegaussian")==0){
+    id.SetBorderSize(   0 );
+    id.SetFillStyle(    0 );
+    id.SetTextAlign(   12 );
+    id.SetTextColor(    1 );
+    id.SetTextSize(0.04);
+    id.SetTextFont (   42 );
+    id.AddText((dist).c_str());
+    data->plotOn(plotframe[key],Range(rangeMin,rangeMax));
+    gStyle->SetOptStat(0); 
+    gStyle->SetOptFit(0); 
+    cout<<"Plotting signal"<<endl;
+    //pdf[key]->plotOn(plotframe[key],
+    //        VisualizeError(*fitresults[key],1.0,kFALSE),
+    //        Range(rangeMin,rangeMax),
+    //        //DrawOption("F"),
+    //        FillColor(kOrange)
+    //        );
+    pdf[key]->plotOn(plotframe[key],LineColor(kBlue),Range(rangeMin,rangeMax));
+    data->plotOn(plotframe[key],Range(rangeMin,rangeMax));
+    plotframe[key]->Draw();
+    id.Draw();
+    }
+    else{
+    //gStyle->SetStatX(0.9);
+    //gStyle->SetStatY(0.5);
+    data->plotOn(plotframe[key],Binning(shape_binning),Range(rangeMin,rangeMax));
+    cout<<"Plotting poly?"<<endl;
     pdf[key]->plotOn(plotframe[key],
-            VisualizeError(*fitresults[key],0.4,kFALSE),
+            VisualizeError(*finalfitresults[key],1.0,kFALSE),
             Range(rangeMin,rangeMax),
             //DrawOption("F"),
             FillColor(kOrange)
             );
-    }
-    else{
-    cout<<"Plotting poly?"<<endl;
-    pdf[key]->plotOn(plotframe[key],
-            //VisualizeError(*finalfitresults[key],1.0,kFALSE),
-            Range(rangeMin,rangeMax),
-            DrawOption("F"),
-            FillColor(kOrange)
-            );
-    }
     pdf[key]->plotOn(plotframe[key],LineColor(kBlue),Range(rangeMin,rangeMax));
-    //data->plotOn(plotframe[key],Binning(shape_binning),Range(rangeMin,rangeMax));
-    data->plotOn(plotframe[key],Range(rangeMin,rangeMax));
-    pdf[key]->paramOn(plotframe[key],data);
+    data->plotOn(plotframe[key],Binning(shape_binning),Range(rangeMin,rangeMax));
+    //pdf[key]->paramOn(plotframe[key],Layout(0.2,0.7,0.8));
+    pdf[key]->paramOn(plotframe[key]);
     plotframe[key]->getAttText()->SetTextSize(0.02);
+    }
+    //data->plotOn(plotframe[key],Range(rangeMin,rangeMax));
     plotframe[key]->Draw("same");
+    lumi.Draw();
+    cms.Draw();
+    pre.Draw();
     canvas[key]->SaveAs((outputdir+"/"+to_string(order)+"_"+shape_name+"_"+systematic+".png").c_str()); 
     return;
 }
