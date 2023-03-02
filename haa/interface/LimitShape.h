@@ -74,10 +74,6 @@ using namespace std;
 using namespace ROOT;
 using namespace RooFit;
 
-/////////////////
-//unpacking by vector 
-//https://stackoverflow.com/questions/11044504/any-solution-to-unpack-a-vector-to-function-arguments-in-c
-////////////////
 #include <iostream>
 #include <utility>
 #include <vector>
@@ -105,6 +101,8 @@ class LimitShape{
         RooRealVar *poi;
         RooRealVar *norm;
         RooRealVar *eventweight;
+        RooRealVar *AMass;
+        RooRealVar *m_vis;
         map<string,RooAbsPdf*> pdf;
         map<string,float> nll;
         map<string,float> deltanll; // dictionary for the change in nlls from the pdf fits
@@ -121,8 +119,8 @@ class LimitShape{
         float coeffMax  =  10000.0;
         vector<float> coeffvect;
         int maxscans  =  20;
-        //float shape_binning  = 16;
-        float shape_binning  = 4;
+        float shape_binning  = 16;
+        //float shape_binning  = 4;
         int recursion = 0;
         int year = 2017;
 
@@ -155,7 +153,7 @@ class LimitShape{
         int  fillTree(string pathtotree);
         void rescaleFinalweight(float num);
         void fillPDFs(string type,int order,string dist);
-        void fillDataset();
+        void fillDataset(string cutstring);
         void fitToData();
         void finalFitToData(string type,float sfr);
         void recursiveFitToData(string type);
@@ -598,18 +596,21 @@ void LimitShape::fillPDFs(string type,int order,string dist)
     }
     return;
 }
-void LimitShape::fillDataset()
+void LimitShape::fillDataset(string cutstring)
 {
     //if (!ttree) return;
     eventweight = new RooRealVar("finalweight","finalweight",-10000.0,10000.0);
+    AMass = new RooRealVar("AMass","AMass",-10000.0,10000.0);
+    m_vis = new RooRealVar("m_vis","m_vis",-10000.0,10000.0);
     //eventweight = new RooRealVar("finalweight","finalweight",0.0,10000.0);
     //data = new RooDataSet(shape_dist.c_str(),shape_dist.c_str(),RooArgSet(*poi),Import(*ttree));
     data = new RooDataSet(shape_dist.c_str(),shape_dist.c_str(),
-                        RooArgSet(*poi,*eventweight),
-                        Import(*ttree),WeightVar("finalweight")
+                        RooArgSet(*poi,*eventweight,*AMass,*m_vis),
+                        Import(*ttree),Cut(cutstring.c_str()),WeightVar("finalweight")
                     );
-    cout<<"filled dataset dataset"<<endl;
+    cout<<"filled dataset, norm is "<<data->sumEntries()<<endl;
     norm = new RooRealVar((shape_dist+"_norm").c_str(),(shape_dist+"_norm").c_str(),data->sumEntries(),0.0,10*data->sumEntries());
+    cout<<"normvar is : "<<norm->getVal()<<endl;
     
     return;
 }
@@ -1030,12 +1031,19 @@ void LimitShape::printParamsNLLs()
         nllresults<<"Delta nll between "<<to_string(i)<<" and "<<to_string(i+1)<<"     "<<to_string(nllvals[i] - nllvals[i+1])<<endl;
     }
 
+    //printing chi2 and ndof
+    for(auto const& x:plotframe){
+        nllresults<<"chi square "<<x.second->chiSquare()<<endl;
+        nllresults<<"ndof "<<coeffs[x.first]->GetSize()<<endl;
+    }
     return;
 }
 void LimitShape::createPlots(string type,int order,string dist)
 {
-    gPad->SetLeftMargin(0.15);
     string key = type+to_string(order);//key for the map
+    TCanvas * canvas = new TCanvas(("canvas_"+shape_name).c_str(),("canvas_"+shape_name).c_str(),600,600);
+    canvas->cd();
+    gPad->SetLeftMargin(0.15);
     bool doRatio = 0;
     TPaveText lumi=add_lumi(year,doRatio);
     TPaveText cms=add_CMS(doRatio);
@@ -1043,6 +1051,8 @@ void LimitShape::createPlots(string type,int order,string dist)
     //TPaveText id = TPaveText(0.7,0.5,0.7+0.30,0.5+0.16,"NDC"); // mid right
     TPaveText id = TPaveText(0.3,0.7,0.3+0.30,0.7+0.16,"NDC");
     
+    //calculating the corrected binned normalization - required for CMSSW 10 version of root
+    float normcor = ((float)rangeMax-(float)rangeMin)/(float)shape_binning;
 
     //data->plotOn(plotframe[key],Range(rangeMin,rangeMax),Binning(shape_binning));
     //data->plotOn(plotframe[key],Range(rangeMin,rangeMax));
@@ -1064,52 +1074,112 @@ void LimitShape::createPlots(string type,int order,string dist)
     //        );
     //if(type.compare("gaussian")==0||type.compare("voigtian")==0){
     if(type.compare("gaussian")==0 || type.compare("voigtian")==0 || type.compare("doublegaussian")==0){
-    id.SetBorderSize(   0 );
-    id.SetFillStyle(    0 );
-    id.SetTextAlign(   12 );
-    id.SetTextColor(    1 );
-    id.SetTextSize(0.04);
-    id.SetTextFont (   42 );
-    id.AddText((dist).c_str());
-    data->plotOn(plotframe[key],Range(rangeMin,rangeMax));
-    gStyle->SetOptStat(0); 
-    gStyle->SetOptFit(0); 
-    cout<<"Plotting signal"<<endl;
-    //pdf[key]->plotOn(plotframe[key],
-    //        VisualizeError(*fitresults[key],1.0,kFALSE),
-    //        Range(rangeMin,rangeMax),
-    //        //DrawOption("F"),
-    //        FillColor(kOrange)
-    //        );
-    pdf[key]->plotOn(plotframe[key],LineColor(kBlue),Range(rangeMin,rangeMax));
-    data->plotOn(plotframe[key],Range(rangeMin,rangeMax));
-    plotframe[key]->Draw();
-    id.Draw();
+        id.SetBorderSize(   0 );
+        id.SetFillStyle(    0 );
+        id.SetTextAlign(   12 );
+        id.SetTextColor(    1 );
+        id.SetTextSize(0.04);
+        id.SetTextFont (   42 );
+        id.AddText((dist).c_str());
+
+        //doesn't work with normalization?
+        cout<<"normalization "<<normcor<<endl;
+        //data->plotOn(plotframe[key],Range(rangeMin,rangeMax),Normalization(norm->getVal()*normcor));
+        data->plotOn(plotframe[key],Range(rangeMin,rangeMax),Normalization(norm->getVal()));
+        //data->plotOn(plotframe[key],Range(rangeMin,rangeMax));
+        gStyle->SetOptStat(0); 
+        gStyle->SetOptFit(0); 
+        cout<<"Plotting signal"<<endl;
+        //pdf[key]->plotOn(plotframe[key],
+        //        VisualizeError(*fitresults[key],1.0,kFALSE),
+        //        Range(rangeMin,rangeMax),
+        //        //DrawOption("F"),
+        //        FillColor(kOrange)
+        //        );
+        pdf[key]->plotOn(plotframe[key],LineColor(kBlue),Range(rangeMin,rangeMax),Normalization(norm->getVal()/normcor));
+        //pdf[key]->plotOn(plotframe[key],LineColor(kBlue),Range(rangeMin,rangeMax));
+        //data->plotOn(plotframe[key],Range(rangeMin,rangeMax),Normalization(norm->getVal()/normcor));
+        //data->plotOn(plotframe[key],Range(rangeMin,rangeMax));
+        plotframe[key]->Draw();
+        id.Draw();
+        //data->plotOn(plotframe[key],Range(rangeMin,rangeMax));
+        plotframe[key]->Draw();
+        lumi.Draw();
+        cms.Draw();
+        pre.Draw();
+        cout<<"things drawn"<<endl;
+        canvas->SaveAs((outputdir+"/"+to_string(order)+"_"+shape_name+"_"+systematic+".png").c_str()); 
+        return;
+    }
+    if(shape_name.compare("SS_relaxed_data")==0){
+        //gStyle->SetStatX(0.9);
+        //gStyle->SetStatY(0.5);
+        normcor = ((float)rangeMax-(float)rangeMin)/(float)shape_binning;
+        cout<<"normalization "<<normcor<<endl;
+        //data->plotOn(plotframe[key],Binning(shape_binning),Range(rangeMin,rangeMax),Normalization(norm->getVal()));
+        data->plotOn(plotframe[key],Binning(shape_binning),Range(rangeMin,rangeMax));
+        //cout<<"Plotting poly with normalization "<<norm->getVal()<<endl;
+        //pdf[key]->plotOn(plotframe[key],
+        //        VisualizeError(*finalfitresults[key],1.0,kFALSE),
+        //        Range(rangeMin,rangeMax),
+        //        Normalization(norm->getVal()),
+        //        //DrawOption("F"),
+        //        FillColor(kOrange)
+        //        );
+        //doesn't work with normalization?
+        //pdf[key]->plotOn(plotframe[key],LineColor(kBlue),Range(rangeMin,rangeMax),Normalization(norm->getVal()));
+        //pdf[key]->plotOn(plotframe[key],LineColor(kBlue),Range(rangeMin,rangeMax),Normalization(norm->getVal()/normcor));
+        //pdf[key]->plotOn(plotframe[key],LineColor(kBlue),Range(rangeMin,rangeMax));
+        pdf[key]->plotOn(plotframe[key],LineColor(kBlue),Range(rangeMin,rangeMax));
+        //cout<<"Plotted pdf "<<endl;
+        //data->plotOn(plotframe[key],Binning(shape_binning),Range(rangeMin,rangeMax),Normalization(norm->getVal()));
+        //pdf[key]->paramOn(plotframe[key],Layout(0.2,0.7,0.8));
+        pdf[key]->paramOn(plotframe[key]);
+        //plotframe[key]->getAttText()->SetTextSize(0.02);
+        //data->plotOn(plotframe[key],Range(rangeMin,rangeMax));
+        cout<<"params set "<<endl;
+        plotframe[key]->Draw("same");
+        lumi.Draw("same");
+        cms.Draw("same");
+        pre.Draw("same");
+        cout<<"things drawn"<<endl;
+        canvas->SaveAs((outputdir+"/"+to_string(order)+"_"+shape_name+"_"+systematic+".png").c_str()); 
+        cout<<"things saved"<<endl;
+        return;
     }
     else{
-    //gStyle->SetStatX(0.9);
-    //gStyle->SetStatY(0.5);
-    data->plotOn(plotframe[key],Binning(shape_binning),Range(rangeMin,rangeMax));
-    cout<<"Plotting poly?"<<endl;
-    pdf[key]->plotOn(plotframe[key],
-            VisualizeError(*finalfitresults[key],1.0,kFALSE),
-            Range(rangeMin,rangeMax),
-            //DrawOption("F"),
-            FillColor(kOrange)
-            );
-    pdf[key]->plotOn(plotframe[key],LineColor(kBlue),Range(rangeMin,rangeMax));
-    data->plotOn(plotframe[key],Binning(shape_binning),Range(rangeMin,rangeMax));
-    //pdf[key]->paramOn(plotframe[key],Layout(0.2,0.7,0.8));
-    pdf[key]->paramOn(plotframe[key]);
-    plotframe[key]->getAttText()->SetTextSize(0.02);
+        //gStyle->SetStatX(0.9);
+        //gStyle->SetStatY(0.5);
+        cout<<"normalization "<<normcor<<endl;
+        data->plotOn(plotframe[key],Binning(shape_binning),Range(rangeMin,rangeMax),Normalization(norm->getVal()));
+        //cout<<"Plotting poly with normalization "<<norm->getVal()<<endl;
+        //pdf[key]->plotOn(plotframe[key],
+        //        VisualizeError(*finalfitresults[key],1.0,kFALSE),
+        //        Range(rangeMin,rangeMax),
+        //        Normalization(norm->getVal()),
+        //        //DrawOption("F"),
+        //        FillColor(kOrange)
+        //        );
+        //doesn't work with normalization?
+        pdf[key]->plotOn(plotframe[key],LineColor(kBlue),Range(rangeMin,rangeMax),Normalization(norm->getVal()/normcor));
+        //pdf[key]->plotOn(plotframe[key],LineColor(kBlue),Range(rangeMin,rangeMax));
+        //pdf[key]->plotOn(plotframe[key],LineColor(kBlue),Range(rangeMin,rangeMax));
+        //cout<<"Plotted pdf "<<endl;
+        //data->plotOn(plotframe[key],Binning(shape_binning),Range(rangeMin,rangeMax),Normalization(norm->getVal()));
+        //pdf[key]->paramOn(plotframe[key],Layout(0.2,0.7,0.8));
+        pdf[key]->paramOn(plotframe[key]);
+        //plotframe[key]->getAttText()->SetTextSize(0.02);
+        //data->plotOn(plotframe[key],Range(rangeMin,rangeMax));
+        cout<<"params set "<<endl;
+        plotframe[key]->Draw("same");
+        lumi.Draw("same");
+        cms.Draw("same");
+        pre.Draw("same");
+        cout<<"things drawn"<<endl;
+        canvas->SaveAs((outputdir+"/"+to_string(order)+"_"+shape_name+"_"+systematic+".png").c_str()); 
+        cout<<"things saved"<<endl;
+        return;
     }
-    //data->plotOn(plotframe[key],Range(rangeMin,rangeMax));
-    plotframe[key]->Draw("same");
-    lumi.Draw();
-    cms.Draw();
-    pre.Draw();
-    canvas[key]->SaveAs((outputdir+"/"+to_string(order)+"_"+shape_name+"_"+systematic+".png").c_str()); 
-    return;
 }
 
 
