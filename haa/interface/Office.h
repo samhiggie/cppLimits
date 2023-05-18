@@ -28,6 +28,10 @@
 #include "TRandom3.h"
 #include <TROOT.h>
 
+#include "TMatrixDSym.h"
+#include "TMatrixD.h"
+#include "TMatrixDEigen.h"
+
 #include "time.h"
 #include "RooDataHist.h"
 #include "RooDataSet.h"
@@ -199,14 +203,14 @@ ReturnT unpack_caller(FuncType& func,
 }  // namespace util
 
 float findPullUp(RooDataSet* nominal,RooDataSet* up){
-    cout<<"roodata set for up pull "<<nominal->GetName()<<endl;
+    //cout<<"roodata set for up pull "<<nominal->GetName()<<endl;
     float val_nom = float(nominal->sumEntries());
     float val_up = float(up->sumEntries());
     float s1 = float(val_up/val_nom);
     return std::abs(s1);
 }
 float findPull(RooDataSet* nominal,RooDataSet* up,RooDataSet* down){
-    cout<<"roodata set for pull "<<nominal->GetName()<<endl;
+    //cout<<"roodata set for pull "<<nominal->GetName()<<endl;
     float val_nom = float(nominal->sumEntries());
     float val_up = float(up->sumEntries());
     float val_down = float(down->sumEntries());
@@ -267,7 +271,9 @@ class Office{
     //functions
     Office(po::variables_map shape_vm);
     ~Office();
-//void loadSignalShapes(vector<LimitShape*> inputshapes);
+    //void loadSignalShapes(vector<LimitShape*> inputshapes);
+    //void setSystematics(vector<string> systematics);
+    void setSystematics();
     void loadShape(string name, LimitShape * shape);
     void interpolateParameters(string type, map<string,LimitShape*>& inputshapes);
     void interpolateParameters2016Style(string type, map<string,LimitShape*>& inputshapes);
@@ -293,6 +299,39 @@ Office::Office(po::variables_map shape_vm){
 }
 
 Office::~Office(){}
+
+void Office::setSystematics(){
+    //for(auto const& x: inputsystematics){
+    //    if(x.compare("Nominal")!=0){
+    //        systematics.push_back(x);
+    //    }
+    //}
+    systematics = {
+        "scale_t",
+        "scale_m",
+        "scale_e",
+    };
+
+    if(channel.compare("mmmt")==0){ 
+        systematics.push_back("scale_t_1prong_TauLoose_MuoTight_EleVLoose");
+        systematics.push_back("scale_t_1prong1pizero_TauLoose_MuoTight_EleVLoose");
+        systematics.push_back("scale_t_3prong_TauLoose_MuoTight_EleVLoose");
+        systematics.push_back("scale_t_3prong1pizero_TauLoose_MuoTight_EleVLoose");
+    }
+    if(channel.compare("mmtt")==0){ 
+        systematics.push_back("scale_t_1prong_TauLoose_MuoVLoose_EleVLoose");
+        systematics.push_back("scale_t_1prong1pizero_TauLoose_MuoVLoose_EleVLoose");
+        systematics.push_back("scale_t_3prong_TauLoose_MuoVLoose_EleVLoose");
+        systematics.push_back("scale_t_3prong1pizero_TauLoose_MuoVLoose_EleVLoose");
+    }
+    if(channel.compare("mmet")==0){ 
+        systematics.push_back("scale_t_1prong_TauMedium_MuoVLoose_EleVTight");
+        systematics.push_back("scale_t_1prong1pizero_TauMedium_MuoVLoose_EleVTight");
+        systematics.push_back("scale_t_3prong_TauMedium_MuoVLoose_EleVTight");
+        systematics.push_back("scale_t_3prong1pizero_TauMedium_MuoVLoose_EleVTight");
+    }
+    return;
+} 
 
 void Office::loadShape(string name, LimitShape * shape){
     shapes[name]=shape;
@@ -1605,10 +1644,79 @@ void Office::decorrelateParameters(string shapename,string typeorder){
     RooAbsPdf *newfit = diago.diagonalize(*shapes[shapename]->pdf[typeorder]);
     cout<<"decorrelated function "<<endl;
     newfit->Print();
+    cout<<"refitting ..."<<endl;
+    //newfit->fitTo(*shapes[shapename]->data,newfit->Name(),*shapes[shapename]->poi,RooArgList()) 
+    newfit->fitTo(*shapes[shapename]->data);
+    
+    newfit->Print();
+    
     
     wsp->import(*newfit, RooFit::RecycleConflictNodes());
     //RooFitResult *res2 = newfit->fitTo(*irBkg_dataset, RooFit::Save(1), RooFit::Minimizer("Minuit2"), RooFit::PrintLevel(-1));
- 
+
+    //manually
+    //LimitShape * limshape = shapes[shapename]; 
+    //RooFitResult * r = limshape->finalfitresults[typeorder];
+    //int polysize = (limshape->finalcoeffs).size();
+    ////TList * incoeffs = limshape->finalcoeffs[typeorder]; 
+    //const TMatrixDSym& cov = r->covarianceMatrix() ;
+    //TMatrixD mat_D(polysize,polysize);
+    //for (int i=0; i<polysize; ++i){
+    //    for (int j=0; j<polysize; ++j){
+    //        mat_D[i][j]=cov[i][j];
+    //    }
+    //}
+
+    //TMatrixDEigen mat_sym=TMatrixDEigen(mat_D);
+    //TMatrixD eigenValues=mat_sym.GetEigenValues();
+    //TMatrixD eigenVectors=mat_sym.GetEigenVectors();
+    //TMatrixD eigenVectorsInverted=mat_sym.GetEigenVectors();
+    //cov.Print();
+    //eigenValues.Print();
+    //eigenVectors.Print();
+    //eigenVectorsInverted.Print();
+    ////((1+(line4)*(fup_1/f1_2 - 1))*(f1_2+(line1*sqrt(eignval00)*eignvec00+line2*sqrt(eignval11)*eignvec01+line3*sqrt(eignval22)*eigenVectors02)))
+    //TList * corrcoeffs;
+    //TList * corrformulas; 
+    //TList * corrcoeffs_sq; 
+    ////these are the parameters in the datacards but one extra
+    //for(int cnum=0; cnum<(polysize+1),cnum++){
+    //        corrcoeffs->Add(
+    //                new RooRealVar(
+    //                (TString)("shapeUnc_"+to_string(cnum)+"_"+limshape->shape_dist+"_"+to_string(order)+"_"+limshape->systematic+"_"+limshape->output),
+    //                (TString)("shape parameter uncertainty"),//formula 
+    //                0.0,-5.0,5.0)
+    //                );
+    //}
+
+    ////this is the difficult part ... created the normalized and diagonalized coeffs ... these will be squared later
+    //for(int cnum=0; cnum<(polysize-1),cnum++){
+    //    char formula[2048];
+    //    for(int cin=0; cin<(polysize-1),cin++){
+    //            //shapeUncN + (norm)*(outerCoe[cout]),(outerCoe[cout]),shapeUnc0,sqrt(eigenDiag0)*eigenVector[cout][cin],shapeUnc1,sqrt(eigenDia1)*eigenVector[cout][cin],shapeUnc2,sqrt(eigenDiag2)eigenVector[cout][cin]
+    //            corrcoeffs[]
+    //    }
+    //    sprintf(formula,
+    //            "(1+%s*(%.3f/%.3f-1))*(%.8f+(%s*%.8f+%s*%.8f+%s*%.8f))",
+    //            ,corrcoeff[cin],fup_3,f3_2.getVal(),f3_2.getVal(),line1,sqrt(eigenValues[0][0])*eigenVectors[2][0],line2,sqrt(eigenValues[1][1])*eigenVectors[2][1],line3,sqrt(eigenValues[2][2])*eigenVectors[2][2]
+    //            //shapeUncN + (norm)*(outerCoe[cout]),(outerCoe[cout]),shapeUnc0,sqrt(eigenDiag0)*eigenVector[cout][cin],shapeUnc1,sqrt(eigenDia1)*eigenVector[cout][cin],shapeUnc2,sqrt(eigenDiag2)eigenVector[cout][cin]
+    //            )
+    //    corrformulas->Add(
+    //            new RooFormulaVar(
+    //            (TString)("decorr_formula_"+to_string(cnum)+limshape->shape_dist+"_"+to_string(order)+"_"+limshape->systematic+"_"+limshape->output),
+    //            (TString)formula,//formula 
+    //            RooArgSet(corrcoeffs*))
+    //            );
+    //            
+    //}
+    ////square the formula coefficients 
+    //for(int cnum=0; cnum<polysize,cnum++){
+    //    corrcoeffs_sq->Add(
+    //        new RooFormulaVar(
+    //        (TString)("decorr_"+to_string(cnum)+"_sq_"+limshape->shape_dist+"_"+to_string(order)+"_"+limshape->systematic+"_"+limshape->output),
+    //        "@0*@1",
+    //        RooArgList(*((RooRealVar*)corrformulas->At(cnum)),*((RooRealVar*)corrformulas->At(cnum)))));
+    //}
 
     return;
 
@@ -1651,6 +1759,18 @@ void Office::print2016StyleDatacard(bool isrealdata){
     txtfile << ("------------------------------\n");
     txtfile << ("lumi     lnN              1.016    1.016    1.016\n");
     txtfile << ("TauID     lnN              1.05    1.05    1.05\n");
+    if(year==2016 && channel.compare("mmmt")==0){ txtfile << ("redClosure   lnN    -     -    1.06 \n");}
+    if(year==2016 && channel.compare("mmtt")==0){ txtfile << ("redClosure   lnN    -     -    1.05 \n");}
+    if(year==2016 && channel.compare("mmet")==0){ txtfile << ("redClosure   lnN    -     -    1.16 \n");}
+    if(year==2016 && channel.compare("mmem")==0){ txtfile << ("redClosure   lnN    -     -    1.33 \n");}
+    if(year==2017 && channel.compare("mmmt")==0){ txtfile << ("redClosure   lnN    -     -    1.13 \n");}
+    if(year==2017 && channel.compare("mmtt")==0){ txtfile << ("redClosure   lnN    -     -    1.12 \n");}
+    if(year==2017 && channel.compare("mmet")==0){ txtfile << ("redClosure   lnN    -     -    1.05 \n");}
+    if(year==2017 && channel.compare("mmem")==0){ txtfile << ("redClosure   lnN    -     -    1.44 \n");}
+    if(year==2018 && channel.compare("mmmt")==0){ txtfile << ("redClosure   lnN    -     -    1.05 \n");}
+    if(year==2018 && channel.compare("mmtt")==0){ txtfile << ("redClosure   lnN    -     -    1.09 \n");}
+    if(year==2018 && channel.compare("mmet")==0){ txtfile << ("redClosure   lnN    -     -    1.36 \n");}
+    if(year==2018 && channel.compare("mmem")==0){ txtfile << ("redClosure   lnN    -     -    1.28 \n");}
     txtfile << ("irBkg_"+output+"_decor_norm"+"     lnN              -    1.05    -\n");
     txtfile << ("Bkg_"+output+"_decor_norm"+"     lnN              -    -    1.20\n");
 
@@ -1660,10 +1780,10 @@ void Office::print2016StyleDatacard(bool isrealdata){
 
 
     for (auto const& sys: systematics){
-        cout << "finding pull for systematic " <<sys<<endl;
-        cout << "working on shape "<<(shapes["Nominal_a40"]->shape_name).c_str()<<endl;
-        cout << "data entries "<<to_string((shapes["Nominal_a40"]->data)->sumEntries()).c_str()<<endl;
-        cout << "data entries Up"<<to_string((shapes[sys+"Up_a40"]->data)->sumEntries()).c_str()<<endl;
+        //cout << "finding pull for systematic " <<sys<<endl;
+        //cout << "working on shape "<<(shapes["Nominal_a40"]->shape_name).c_str()<<endl;
+        //cout << "data entries "<<to_string((shapes["Nominal_a40"]->data)->sumEntries()).c_str()<<endl;
+        //cout << "data entries Up"<<to_string((shapes[sys+"Up_a40"]->data)->sumEntries()).c_str()<<endl;
         float signalpullup = findPullUp(
             (shapes["Nominal_a40"]->data),
             (shapes[sys+"Up_a40"]->data));
@@ -1693,7 +1813,9 @@ void Office::print2016StyleDatacard(bool isrealdata){
             RooRealVar * var = (RooRealVar*) obj;
             //txtfile << var->GetName()<<"  param "+to_string(round_up(var->getVal(),5))+"   "+to_string(round_up(var->getError(),5)) << endl;
             //txtfile << var->GetName()<<"  param "+to_string(0.0)+"   "+to_string(1.0) << endl;
-            txtfile <<"Nominal_irBkg_decor_eigLin_"<<to_string(coeffnum)<<"_  param "+to_string(0.0)+"   "+to_string(1.0) << endl;
+            //txtfile <<"Nominal_irBkg_decor_eigLin_"<<to_string(coeffnum)<<"_  param "+to_string(0.0)+"   "+to_string(1.0) << endl;
+            txtfile <<"Nominal_irBkg_decor_eig"<<to_string(coeffnum)<<"  param "+to_string(0.0)+"   "+to_string(1.0) << endl;
+            //txtfile <<"Nominal_irBkg_decor_eigLin_"<<to_string(coeffnum)<<"  param "+to_string(0.0)+"   "+to_string(1.0) << endl;
             coeffnum++;
         }
     }
@@ -1704,7 +1826,9 @@ void Office::print2016StyleDatacard(bool isrealdata){
             //txtfile << var->GetName()<<"  param "+to_string(round_up(var->getVal(),5))+"   "+to_string(round_up(var->getError(),5)) << endl;
             //txtfile << var->GetName()<<"  param "+to_string(0.0)+"   "+to_string(1.0) << endl;
             //txtfile << var->GetName()<<"  param "+to_string(0.0)+"   "+to_string(1.0) << endl;
-            txtfile <<"Nominal_Bkg_decor_eigLin_"<<to_string(coeffnum)<<"_  param "+to_string(0.0)+"   "+to_string(1.0) << endl;
+            //txtfile <<"Nominal_Bkg_decor_eigLin_"<<to_string(coeffnum)<<"_  param "+to_string(0.0)+"   "+to_string(1.0) << endl;
+            txtfile <<"Nominal_Bkg_decor_eig"<<to_string(coeffnum)<<"  param "+to_string(0.0)+"   "+to_string(1.0) << endl;
+            //txtfile <<"Nominal_Bkg_decor_eigLin_"<<to_string(coeffnum)<<"  param "+to_string(0.0)+"   "+to_string(1.0) << endl;
             coeffnum++;
         }
     }
@@ -1939,6 +2063,18 @@ void Office::print2016StyleDatacardPerMass(bool isrealdata){
         txtfiles[x.first] << ("------------------------------\n");
         txtfiles[x.first] << ("lumi     lnN              1.016    1.016    1.016\n");
         txtfiles[x.first] << ("TauID     lnN              1.05    1.05    1.05\n");
+        if(year==2016 && channel.compare("mmmt")==0){ txtfiles[x.first] << ("redClosure   lnN    -     -    1.06 \n");}
+        if(year==2016 && channel.compare("mmtt")==0){ txtfiles[x.first] << ("redClosure   lnN    -     -    1.05 \n");}
+        if(year==2016 && channel.compare("mmet")==0){ txtfiles[x.first] << ("redClosure   lnN    -     -    1.16 \n");}
+        if(year==2016 && channel.compare("mmem")==0){ txtfiles[x.first] << ("redClosure   lnN    -     -    1.33 \n");}
+        if(year==2017 && channel.compare("mmmt")==0){ txtfiles[x.first] << ("redClosure   lnN    -     -    1.13 \n");}
+        if(year==2017 && channel.compare("mmtt")==0){ txtfiles[x.first] << ("redClosure   lnN    -     -    1.12 \n");}
+        if(year==2017 && channel.compare("mmet")==0){ txtfiles[x.first] << ("redClosure   lnN    -     -    1.05 \n");}
+        if(year==2017 && channel.compare("mmem")==0){ txtfiles[x.first] << ("redClosure   lnN    -     -    1.44 \n");}
+        if(year==2018 && channel.compare("mmmt")==0){ txtfiles[x.first] << ("redClosure   lnN    -     -    1.05 \n");}
+        if(year==2018 && channel.compare("mmtt")==0){ txtfiles[x.first] << ("redClosure   lnN    -     -    1.09 \n");}
+        if(year==2018 && channel.compare("mmet")==0){ txtfiles[x.first] << ("redClosure   lnN    -     -    1.36 \n");}
+        if(year==2018 && channel.compare("mmem")==0){ txtfiles[x.first] << ("redClosure   lnN    -     -    1.28 \n");}
         txtfiles[x.first] << ("irBkg_"+output+"_decor_norm"+"     lnN              -    1.05    -\n");
         txtfiles[x.first] << ("Bkg_"+output+"_decor_norm"+"     lnN              -    -    1.20\n");
 
@@ -1990,7 +2126,9 @@ void Office::print2016StyleDatacardPerMass(bool isrealdata){
                 RooRealVar * var = (RooRealVar*) obj;
                 //txtfiles[x.first] << var->GetName()<<"  param "+to_string(round_up(var->getVal(),5))+"   "+to_string(round_up(var->getError(),5)) << endl;
                 //txtfiles[x.first] << var->GetName()<<"  param "+to_string(0.0)+"   "+to_string(1.0) << endl;
-                txtfiles[x.first] <<"Nominal_irBkg_decor_eigLin_"<<to_string(coeffnum)<<"_  param "+to_string(0.0)+"   "+to_string(1.0) << endl;
+                //txtfiles[x.first] <<"Nominal_irBkg_decor_eigLin_"<<to_string(coeffnum)<<"_  param "+to_string(0.0)+"   "+to_string(1.0) << endl;
+                txtfiles[x.first] <<"Nominal_irBkg_decor_eig"<<to_string(coeffnum)<<"  param "+to_string(0.0)+"   "+to_string(1.0) << endl;
+                //txtfiles[x.first] <<"Nominal_irBkg_decor_eigLin_"<<to_string(coeffnum)<<"  param "+to_string(0.0)+"   "+to_string(1.0) << endl;
                 coeffnum++;
             }
         }
@@ -2000,7 +2138,9 @@ void Office::print2016StyleDatacardPerMass(bool isrealdata){
                 RooRealVar * var = (RooRealVar*) obj;
                 //txtfiles[x.first] << var->GetName()<<"  param "+to_string(round_up(var->getVal(),5))+"   "+to_string(round_up(var->getError(),5)) << endl;
                 //txtfiles[x.first] << var->GetName()<<"  param "+to_string(0.0)+"   "+to_string(1.0) << endl;
-                txtfiles[x.first] <<"Nominal_Bkg_decor_eigLin_"<<to_string(coeffnum)<<"_  param "+to_string(0.0)+"   "+to_string(1.0) << endl;
+                //txtfiles[x.first] <<"Nominal_Bkg_decor_eigLin_"<<to_string(coeffnum)<<"_  param "+to_string(0.0)+"   "+to_string(1.0) << endl;
+                txtfiles[x.first] <<"Nominal_Bkg_decor_eig"<<to_string(coeffnum)<<"  param "+to_string(0.0)+"   "+to_string(1.0) << endl;
+                //txtfiles[x.first] <<"Nominal_Bkg_decor_eigLin_"<<to_string(coeffnum)<<"  param "+to_string(0.0)+"   "+to_string(1.0) << endl;
                 coeffnum++;
             }
         }

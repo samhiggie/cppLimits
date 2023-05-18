@@ -68,8 +68,10 @@ int main(int ac, char* av[]) {
         ("basic,basic", po::value< int >()->default_value(0), "create the datacards and RooWorkspaces in the old 2016 way")
         ("sfr,sfr", po::value< float >()->default_value(1.5), "second fit range based on multiple of nominal value")
         ("sfrIr,sfrIr", po::value< float >()->default_value(1.5), "second fit range based on multiple of nominal value for the irreducible background")
-        ("coeRange,coeRange", po::value< float >()->default_value(10000), "initial range on the coeffs for the fit")
-        ("coeRangeIr,coeRangeIr", po::value< float >()->default_value(10000), "initial range on the coeffs for the irreducible background fit")
+        //("coeRange,coeRange", po::value< float >()->default_value(10000), "initial range on the coeffs for the fit")
+        //("coeRangeIr,coeRangeIr", po::value< float >()->default_value(10000), "initial range on the coeffs for the irreducible background fit")
+        ("coeRange,coeRange", po::value< vector<float> >()->multitoken(), "initial range on the coeffs for the fit")
+        ("coeRangeIr,coeRangeIr", po::value< vector<float> >()->multitoken(), "initial range on the coeffs for the irreducible background fit")
         ("sigt,sigt", po::value< string >(), " signal type gaussian, voigtian, double gauss")
         ("coeRangeSig,coeRangeSig", po::value< vector<float>>()->multitoken(), "initial range on the alpha and sigma")
         ("SigRanges,SigRanges", po::value< int >()->default_value(0), "per signal template ranges for poi")
@@ -89,9 +91,23 @@ int main(int ac, char* av[]) {
     po::notify(vm);
     std::string inputFile;
     float sfr = vm["sfr"].as<float>();
-    float initialRange = vm["coeRange"].as<float>();
     float sfrIr = vm["sfrIr"].as<float>();
-    float initialRangeIr = vm["coeRangeIr"].as<float>();
+
+    //float initialRange = vm["coeRange"].as<float>();
+    //float initialRangeIr = vm["coeRangeIr"].as<float>();
+    vector<float> initialRange = vm["coeRange"].as<vector<float>>();
+    vector<float> initialRangeIr = vm["coeRangeIr"].as<vector<float>>();
+    cout<<"ranges IR ";
+    for(int coe=0;(unsigned int)coe<initialRangeIr.size(); coe++){
+        cout<<to_string(initialRangeIr[coe])<<" ";
+    }
+    cout<<endl;
+    cout<<"ranges BKG SS ";
+    for(int coe=0; (unsigned int)coe<initialRange.size(); coe++){
+        cout<<to_string(initialRange[coe])<<" ";
+    }
+    cout<<endl;
+
     vector<float> initialRangeSig = vm["coeRangeSig"].as<vector<float>>();
 
     if (vm.count("help")) {
@@ -160,6 +176,8 @@ int main(int ac, char* av[]) {
 
     int opt = vm["runs"].as<int>();
     int old = vm["basic"].as<int>();
+
+    //systematics = { "Nominal" };
     
     if(opt==0){
 
@@ -187,8 +205,19 @@ int main(int ac, char* av[]) {
             ZZshapes[sys]->setsystematic(sys);
             ZZshapes[sys]->connectFile(inputFile);
             ZZshapes[sys]->fillTree(channel+"_inclusive");
-            ZZshapes[sys]->coeffMin = -1.0 * initialRangeIr;
-            ZZshapes[sys]->coeffMax = 1.0 * initialRangeIr;
+            //ZZshapes[sys]->coeffMin = -1.0 * initialRangeIr;
+            //ZZshapes[sys]->coeffMax = 1.0 * initialRangeIr;
+            for(int coe=0; (unsigned int)coe<initialRangeIr.size(); coe++){
+                //ZZshapes[sys]->coeRanges[coe]=initialRangeIr[coe]
+                ZZshapes[sys]->coeffMin.push_back(-1.0 * initialRangeIr[coe]);
+                ZZshapes[sys]->coeffMax.push_back(1.0 * initialRangeIr[coe]);
+            }
+            cout<<"ZZ ranges after setting ";
+            for(int coe=0; (unsigned int)coe<initialRangeIr.size(); coe++){
+                cout<<to_string(ZZshapes[sys]->coeffMin[coe])<<" ";
+                cout<<to_string(ZZshapes[sys]->coeffMax[coe])<<" ";
+            }
+            cout<<endl;
             ZZshapes[sys]->fillPDFs(vm["irbkgt"].as<string>(),vm["irbkgo"].as<int>(),"irBkg");
             ZZshapes[sys]->fillDataset("mll-m_vis>0&&"+AMasscut);
             //if(sys.compare("Nominal")==0){
@@ -212,8 +241,12 @@ int main(int ac, char* av[]) {
                 FFshapes[sys]->setsystematic("Nominal");
                 FFshapes[sys]->connectFile(inputFile);
                 FFshapes[sys]->fillTree(channel+"_inclusive");
-                FFshapes[sys]->coeffMin = -1.0 * initialRange;
-                FFshapes[sys]->coeffMax = 1.0 * initialRange;
+                for(int coe=0; (unsigned int)coe<initialRange.size(); coe++){
+                    FFshapes[sys]->coeffMin.push_back( -1.0 * initialRange[coe]);
+                    FFshapes[sys]->coeffMax.push_back( 1.0 * initialRange[coe]);
+                }
+                //FFshapes[sys]->coeffMin = -1.0 * initialRange;
+                //FFshapes[sys]->coeffMax = 1.0 * initialRange;
                 FFshapes[sys]->fillPDFs(vm["bkgt"].as<string>(),vm["bkgo"].as<int>(),"Bkg");
                 FFshapes[sys]->fillDataset("mll-m_vis>0&&"+AMasscut);
                 FFshapes[sys]->fitToData();
@@ -238,8 +271,12 @@ int main(int ac, char* av[]) {
                 FFshapes[sys]->setsystematic("Nominal");
                 FFshapes[sys]->connectFile(inputFile);
                 FFshapes[sys]->fillTree(channel+"_inclusive");
-                FFshapes[sys]->coeffMin = -1.0 * initialRange;
-                FFshapes[sys]->coeffMax = 1.0 * initialRange;
+                for(int coe=0; (unsigned int)coe<initialRange.size(); coe++){
+                    FFshapes[sys]->coeffMin.push_back( -1.0 * initialRange[coe]);
+                    FFshapes[sys]->coeffMax.push_back( 1.0 * initialRange[coe]);
+                }
+                //FFshapes[sys]->coeffMin = -1.0 * initialRange;
+                //FFshapes[sys]->coeffMax = 1.0 * initialRange;
                 FFshapes[sys]->fillPDFs(vm["bkgt"].as<string>(),vm["bkgo"].as<int>(),"Bkg");
                 FFshapes[sys]->fillDataset("mll-m_vis>0&&"+AMasscut);
                 cout<<" Normalization from loose Bkg "<<FFshapes[sys]->data->sumEntries()<<endl;
@@ -255,50 +292,109 @@ int main(int ac, char* av[]) {
         }    
          
         cout<<"done with FF ..."<<endl;
+        cout<<"final parameters and errors ..."<<endl;
+        cout<<"==================================="<<endl;
+        cout<<"ZZ ..."<<endl;
+        ZZshapes["Nominal"]->printParamsNLLs();
+        cout<<"-----------------------------------"<<endl;
+        cout<<"FF ..."<<endl;
+        FFshapes["Nominal"]->printParamsNLLs();
+        cout<<"==================================="<<endl;
+        //return 0;
+
+        Office * off = new Office(vm); 
 
         //systematics = { "Nominal","scale_eUp","scale_eDown","scale_m_etalt1p2Up","scale_m_etalt1p2Down",
         //           "scale_m_eta1p2to2p1Up","scale_m_eta1p2to2p1Down","scale_m_etagt2p1Up","scale_m_etagt2p1Down",
         //           "scale_t_1prongUp","scale_t_1prongDown","scale_t_1prong1pizeroUp","scale_t_1prong1pizeroDown",
         //           "scale_t_3prongUp","scale_t_3prongDown","scale_t_3prong1pizeroUp","scale_t_3prong1pizeroDown"};
+
         systematics = {
-        "Nominal",
-        "scale_tUp",
-        "scale_mUp",
-        "scale_eUp",
-        //mmtt
-        "scale_t_1prong_TauLoose_MuoVLoose_EleVLooseUp",
-        "scale_t_1prong1pizero_TauLoose_MuoVLoose_EleVLooseUp",
-        "scale_t_3prong_TauLoose_MuoVLoose_EleVLooseUp",
-        "scale_t_3prong1pizero_TauLoose_MuoVLoose_EleVLooseUp",
-        //mmmt
-        "scale_t_1prong_TauLoose_MuoTight_EleVLooseUp",
-        "scale_t_1prong1pizero_TauLoose_MuoTight_EleVLooseUp",
-        "scale_t_3prong_TauLoose_MuoTight_EleVLooseUp",
-        "scale_t_3prong1pizero_TauLoose_MuoTight_EleVLooseUp",
-        //mmet
-        "scale_t_1prong_TauMedium_MuoVLoose_EleVTightUp",
-        "scale_t_1prong1pizero_TauMedium_MuoVLoose_EleVTightUp",
-        "scale_t_3prong_TauMedium_MuoVLoose_EleVTightUp",
-        "scale_t_3prong1pizero_TauMedium_MuoVLoose_EleVTightUp",
-        "scale_tDown",
-        "scale_mDown",
-        "scale_eDown",
-        //mmtt
-        "scale_t_1prong_TauLoose_MuoVLoose_EleVLooseDown",
-        "scale_t_1prong1pizero_TauLoose_MuoVLoose_EleVLooseDown",
-        "scale_t_3prong_TauLoose_MuoVLoose_EleVLooseDown",
-        "scale_t_3prong1pizero_TauLoose_MuoVLoose_EleVLooseDown",
-        //mmmt
-        "scale_t_1prong_TauLoose_MuoTight_EleVLooseDown",
-        "scale_t_1prong1pizero_TauLoose_MuoTight_EleVLooseDown",
-        "scale_t_3prong_TauLoose_MuoTight_EleVLooseDown",
-        "scale_t_3prong1pizero_TauLoose_MuoTight_EleVLooseDown",
-        //mmet
-        "scale_t_1prong_TauMedium_MuoVLoose_EleVTightDown",
-        "scale_t_1prong1pizero_TauMedium_MuoVLoose_EleVTightDown",
-        "scale_t_3prong_TauMedium_MuoVLoose_EleVTightDown",
-        "scale_t_3prong1pizero_TauMedium_MuoVLoose_EleVTightDown"
+            "Nominal",
+            "scale_tUp",
+            "scale_mUp",
+            "scale_eUp",
+            "scale_tDown",
+            "scale_mDown",
+            "scale_eDown"
         };
+
+        if(channel.compare("mmmt")==0){ 
+            systematics.push_back("scale_t_1prong_TauLoose_MuoTight_EleVLooseUp");
+            systematics.push_back("scale_t_1prong1pizero_TauLoose_MuoTight_EleVLooseUp");
+            systematics.push_back("scale_t_3prong_TauLoose_MuoTight_EleVLooseUp");
+            systematics.push_back("scale_t_3prong1pizero_TauLoose_MuoTight_EleVLooseUp");
+            systematics.push_back("scale_t_1prong_TauLoose_MuoTight_EleVLooseDown");
+            systematics.push_back("scale_t_1prong1pizero_TauLoose_MuoTight_EleVLooseDown");
+            systematics.push_back("scale_t_3prong_TauLoose_MuoTight_EleVLooseDown");
+            systematics.push_back("scale_t_3prong1pizero_TauLoose_MuoTight_EleVLooseDown");
+        }
+        if(channel.compare("mmtt")==0){ 
+            systematics.push_back("scale_t_1prong_TauLoose_MuoVLoose_EleVLooseUp");
+            systematics.push_back("scale_t_1prong1pizero_TauLoose_MuoVLoose_EleVLooseUp");
+            systematics.push_back("scale_t_3prong_TauLoose_MuoVLoose_EleVLooseUp");
+            systematics.push_back("scale_t_3prong1pizero_TauLoose_MuoVLoose_EleVLooseUp");
+            systematics.push_back("scale_t_1prong_TauLoose_MuoVLoose_EleVLooseDown");
+            systematics.push_back("scale_t_1prong1pizero_TauLoose_MuoVLoose_EleVLooseDown");
+            systematics.push_back("scale_t_3prong_TauLoose_MuoVLoose_EleVLooseDown");
+            systematics.push_back("scale_t_3prong1pizero_TauLoose_MuoVLoose_EleVLooseDown");
+        }
+        if(channel.compare("mmet")==0){ 
+            systematics.push_back("scale_t_1prong_TauMedium_MuoVLoose_EleVTightUp");
+            systematics.push_back("scale_t_1prong1pizero_TauMedium_MuoVLoose_EleVTightUp");
+            systematics.push_back("scale_t_3prong_TauMedium_MuoVLoose_EleVTightUp");
+            systematics.push_back("scale_t_3prong1pizero_TauMedium_MuoVLoose_EleVTightUp");
+            systematics.push_back("scale_t_1prong_TauMedium_MuoVLoose_EleVTightDown");
+            systematics.push_back("scale_t_1prong1pizero_TauMedium_MuoVLoose_EleVTightDown");
+            systematics.push_back("scale_t_3prong_TauMedium_MuoVLoose_EleVTightDown");
+            systematics.push_back("scale_t_3prong1pizero_TauMedium_MuoVLoose_EleVTightDown");
+        }
+        //override office!
+        off->setSystematics();
+        //off->setSystematics(systematics);
+        //off->systematics = systematics;
+        
+
+
+        //systematics = {
+        //"Nominal",
+        //"scale_tUp",
+        //"scale_mUp",
+        //"scale_eUp",
+        //"scale_tDown",
+        //"scale_mDown",
+        //"scale_eDown",
+        ////mmtt
+        //"scale_t_1prong_TauLoose_MuoVLoose_EleVLooseUp",
+        //"scale_t_1prong1pizero_TauLoose_MuoVLoose_EleVLooseUp",
+        //"scale_t_3prong_TauLoose_MuoVLoose_EleVLooseUp",
+        //"scale_t_3prong1pizero_TauLoose_MuoVLoose_EleVLooseUp",
+        ////mmmt
+        //"scale_t_1prong_TauLoose_MuoTight_EleVLooseUp",
+        //"scale_t_1prong1pizero_TauLoose_MuoTight_EleVLooseUp",
+        //"scale_t_3prong_TauLoose_MuoTight_EleVLooseUp",
+        //"scale_t_3prong1pizero_TauLoose_MuoTight_EleVLooseUp",
+        ////mmet
+        //"scale_t_1prong_TauMedium_MuoVLoose_EleVTightUp",
+        //"scale_t_1prong1pizero_TauMedium_MuoVLoose_EleVTightUp",
+        //"scale_t_3prong_TauMedium_MuoVLoose_EleVTightUp",
+        //"scale_t_3prong1pizero_TauMedium_MuoVLoose_EleVTightUp",
+        ////mmtt
+        //"scale_t_1prong_TauLoose_MuoVLoose_EleVLooseDown",
+        //"scale_t_1prong1pizero_TauLoose_MuoVLoose_EleVLooseDown",
+        //"scale_t_3prong_TauLoose_MuoVLoose_EleVLooseDown",
+        //"scale_t_3prong1pizero_TauLoose_MuoVLoose_EleVLooseDown",
+        ////mmmt
+        //"scale_t_1prong_TauLoose_MuoTight_EleVLooseDown",
+        //"scale_t_1prong1pizero_TauLoose_MuoTight_EleVLooseDown",
+        //"scale_t_3prong_TauLoose_MuoTight_EleVLooseDown",
+        //"scale_t_3prong1pizero_TauLoose_MuoTight_EleVLooseDown",
+        ////mmet
+        //"scale_t_1prong_TauMedium_MuoVLoose_EleVTightDown",
+        //"scale_t_1prong1pizero_TauMedium_MuoVLoose_EleVTightDown",
+        //"scale_t_3prong_TauMedium_MuoVLoose_EleVTightDown",
+        //"scale_t_3prong1pizero_TauMedium_MuoVLoose_EleVTightDown"
+        //};
 
 
 
@@ -321,7 +417,6 @@ int main(int ac, char* av[]) {
                 };
 
 
-        Office * off = new Office(vm); 
 
 
         int mass;
@@ -396,8 +491,9 @@ int main(int ac, char* av[]) {
         ZZshapes["Nominal"]->norm->SetName(("irBkg_"+output+"_norm").c_str());
         FFshapes["Nominal"]->norm->SetName(("Bkg_"+output+"_norm").c_str());
 
-        off->wsp->import(*(ZZshapes["Nominal"]->pdf[vm["irbkgt"].as<string>()+to_string(vm["irbkgo"].as<int>())]));
-        off->wsp->import(*(FFshapes["Nominal"]->pdf[vm["bkgt"].as<string>()+to_string(vm["bkgo"].as<int>())]));
+        //only import decorrelated ones? May 2023
+        //off->wsp->import(*(ZZshapes["Nominal"]->pdf[vm["irbkgt"].as<string>()+to_string(vm["irbkgo"].as<int>())]));
+        //off->wsp->import(*(FFshapes["Nominal"]->pdf[vm["bkgt"].as<string>()+to_string(vm["bkgo"].as<int>())]));
 
         //off->interpolateParameters("gaussian",nominal_signals); //this will import signal spline function to workspace
         //off->interpolateParameters(vm["sigt"].as<string>(),nominal_signals); //this will import signal spline function to workspace
@@ -411,8 +507,11 @@ int main(int ac, char* av[]) {
         off->wsp->writeToFile(
             ((off->outputdir)+"/"+"HToAAWorkspace_full_"+(off->output)+".root").c_str()
             );
+
         off->decorrelateParameters("Nominal_irBkg",vm["irbkgt"].as<string>()+to_string(vm["irbkgo"].as<int>()));
+
         off->decorrelateParameters("Nominal_Bkg",vm["bkgt"].as<string>()+to_string(vm["bkgo"].as<int>()));
+
         off->wsp->writeToFile(
             ((off->outputdir)+"/"+"HToAAWorkspace_decorrelated_"+(off->output)+".root").c_str()
             );
@@ -440,13 +539,43 @@ int main(int ac, char* av[]) {
         ZZ->setsystematic("Nominal");
         ZZ->connectFile(inputFile);
         ZZ->fillTree(channel+"_inclusive");
-        ZZ->coeffMin = -1.0 * initialRangeIr;
-        ZZ->coeffMax = 1.0 * initialRangeIr;
+        //ZZ->coeffMin = -1.0 * initialRangeIr;
+        //ZZ->coeffMax = 1.0 * initialRangeIr;
+        initialRangeIr = {1,1};
+        for(int coe=0; (unsigned int)coe<initialRangeIr.size(); coe++){
+            ZZ->coeffMin.push_back(-1.0 * initialRangeIr[coe]);
+            ZZ->coeffMax.push_back(1.0 * initialRangeIr[coe]);
+        }
         ZZ->fillPDFs(vm["irbkgt"].as<string>(),1,"irBkg");
+        initialRangeIr = {1,1,1};
+        for(int coe=0; (unsigned int)coe<initialRangeIr.size(); coe++){
+            ZZ->coeffMin.push_back(-1.0 * initialRangeIr[coe]);
+            ZZ->coeffMax.push_back(1.0 * initialRangeIr[coe]);
+        }
         ZZ->fillPDFs(vm["irbkgt"].as<string>(),2,"irBkg");
+        initialRangeIr = {1,1,1,1};
+        for(int coe=0; (unsigned int)coe<initialRangeIr.size(); coe++){
+            ZZ->coeffMin.push_back(-1.0 * initialRangeIr[coe]);
+            ZZ->coeffMax.push_back(1.0 * initialRangeIr[coe]);
+        }
         ZZ->fillPDFs(vm["irbkgt"].as<string>(),3,"irBkg");
+        initialRangeIr = {1,1,1,1,1};
+        for(int coe=0; (unsigned int)coe<initialRangeIr.size(); coe++){
+            ZZ->coeffMin.push_back(-1.0 * initialRangeIr[coe]);
+            ZZ->coeffMax.push_back(1.0 * initialRangeIr[coe]);
+        }
         ZZ->fillPDFs(vm["irbkgt"].as<string>(),4,"irBkg");
+        initialRangeIr = {1,1,1,1,1,1};
+        for(int coe=0; (unsigned int)coe<initialRangeIr.size(); coe++){
+            ZZ->coeffMin.push_back(-1.0 * initialRangeIr[coe]);
+            ZZ->coeffMax.push_back(1.0 * initialRangeIr[coe]);
+        }
         ZZ->fillPDFs(vm["irbkgt"].as<string>(),5,"irBkg");
+        initialRangeIr = {1,1,1,1,1,1,1};
+        for(int coe=0; (unsigned int)coe<initialRangeIr.size(); coe++){
+            ZZ->coeffMin.push_back(-1.0 * initialRangeIr[coe]);
+            ZZ->coeffMax.push_back(1.0 * initialRangeIr[coe]);
+        }
         ZZ->fillPDFs(vm["irbkgt"].as<string>(),6,"irBkg");
         ZZ->fillDataset("mll-m_vis>0&&"+AMasscut);
         ZZ->fitToData();
@@ -474,14 +603,45 @@ int main(int ac, char* av[]) {
         FF->setsystematic("Nominal");
         FF->connectFile(inputFile);
         FF->fillTree(channel+"_inclusive");
-        FF->coeffMin = -1.0 * initialRange;
-        FF->coeffMax = 1.0 * initialRange;
+        //FF->coeffMin = -1.0 * initialRange;
+        //FF->coeffMax = 1.0 * initialRange;
+        initialRangeIr = {1,1};
+        for(int coe=0; (unsigned int)coe<initialRange.size(); coe++){
+            FF->coeffMin.push_back(-1.0 * initialRange[coe]);
+            FF->coeffMax.push_back(1.0 * initialRange[coe]);
+        }
         FF->fillPDFs(vm["bkgt"].as<string>(),1,"SS_relaxed_data");
+        initialRangeIr = {1,1,1};
+        for(int coe=0; (unsigned int)coe<initialRange.size(); coe++){
+            FF->coeffMin.push_back(-1.0 * initialRange[coe]);
+            FF->coeffMax.push_back(1.0 * initialRange[coe]);
+        }
         FF->fillPDFs(vm["bkgt"].as<string>(),2,"SS_relaxed_data");
+        initialRangeIr = {1,1,1,1};
+        for(int coe=0; (unsigned int)coe<initialRange.size(); coe++){
+            FF->coeffMin.push_back(-1.0 * initialRange[coe]);
+            FF->coeffMax.push_back(1.0 * initialRange[coe]);
+        }
         FF->fillPDFs(vm["bkgt"].as<string>(),3,"SS_relaxed_data");
+        initialRangeIr = {1,1,1,1,1};
+        for(int coe=0; (unsigned int)coe<initialRange.size(); coe++){
+            FF->coeffMin.push_back(-1.0 * initialRange[coe]);
+            FF->coeffMax.push_back(1.0 * initialRange[coe]);
+        }
         FF->fillPDFs(vm["bkgt"].as<string>(),4,"SS_relaxed_data");
+        initialRangeIr = {1,1,1,1,1,1};
+        for(int coe=0; (unsigned int)coe<initialRange.size(); coe++){
+            FF->coeffMin.push_back(-1.0 * initialRange[coe]);
+            FF->coeffMax.push_back(1.0 * initialRange[coe]);
+        }
         FF->fillPDFs(vm["bkgt"].as<string>(),5,"SS_relaxed_data");
+        initialRangeIr = {1,1,1,1,1,1,1};
+        for(int coe=0; (unsigned int)coe<initialRange.size(); coe++){
+            FF->coeffMin.push_back(-1.0 * initialRange[coe]);
+            FF->coeffMax.push_back(1.0 * initialRange[coe]);
+        }
         FF->fillPDFs(vm["bkgt"].as<string>(),6,"SS_relaxed_data");
+
         FF->fillDataset("mll-m_vis>0&&"+AMasscut);
         cout<<"Normalization of SS relaxed "<<FF->norm->getVal()<<endl;
         FF->norm = tempForNorm->norm;

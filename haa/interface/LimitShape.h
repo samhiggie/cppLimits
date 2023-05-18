@@ -115,8 +115,10 @@ class LimitShape{
         map<string,TCanvas*> canvas;
         float rangeMin  = 0.0;
         float rangeMax  = 0.0;
-        float coeffMin  = -10000.0;
-        float coeffMax  =  10000.0;
+        //float coeffMin  = -10000.0;
+        //float coeffMax  =  10000.0;
+        vector<float> coeffMin;
+        vector<float> coeffMax;
         vector<float> coeffvect;
         int maxscans  =  20;
         float shape_binning  = 16;
@@ -282,7 +284,7 @@ void LimitShape::fillPDFs(string type,int order,string dist)
                     //(TString)("c"+to_string(cnum)+"_"+shape_dist+"_"+systematic+"_"+output),
                     //(TString)("c"+to_string(cnum)+"_"+shape_dist+"_"+systematic+"_"+output),
                                 //1.0, -10000.0, 10000.0)
-                                1.0, coeffMin, coeffMax)
+                                1.0, coeffMin[cnum], coeffMax[cnum])
                     );
         }
         for (int cnum=0;cnum < order+1; cnum++){
@@ -336,7 +338,7 @@ void LimitShape::fillPDFs(string type,int order,string dist)
                     (TString)("c"+to_string(cnum)+"_"+shape_dist+"_"+systematic+"_"+output),
                     (TString)("c"+to_string(cnum)+"_"+shape_dist+"_"+systematic+"_"+output),
                                 //1.0, -10000.0, 10000.0)
-                                1.0, coeffMin, coeffMax)
+                                1.0, coeffMin[cnum], coeffMax[cnum])
                     );
         }
         for (int cnum=0;cnum < order+1; cnum++){
@@ -638,286 +640,6 @@ void LimitShape::fitToData()
     return;
 }
 
-void LimitShape::scanFitToData(string type)
-{
-    RooMsgService::instance().setGlobalKillBelow(RooFit::WARNING);
-    //ofstream scanfile;
-    //scanfile.open(outputdir+"/fitscan_"+shape_dist+"_"+shape_name+"_"+systematic+".csv");
-    TFile * scanfile = new TFile((outputdir+"/fitscan_"+shape_dist+"_"+shape_name+"_"+systematic+".root").c_str(),"recreate");
-    scanfile->cd();
-    
-    //vector<float> 
-    
-    
-    for(auto const& x: pdf){
-        cout<<"working on pdf final fit"<<(x.first).c_str()<<endl;
-        TTree * scantree = new TTree(("scantree_"+x.first).c_str(),("scantree_"+x.first).c_str());
-        vector<vector<float>> vect_coeffval;
-        vector<vector<float>> vect_coefferr;
-        vector<vector<int>>   vect_scanmin1;
-        vector<vector<int>>   vect_scanmax1;
-        vector<vector<int>>   vect_scanmin2;
-        vector<vector<int>>   vect_scanmax2;
-        string coeffname;
-        float coeffval;
-        float coefferr;
-        string coeffname2;
-        float coeffval2;
-        float coefferr2;
-        int   scanmin1;
-        int   scanmax1;
-        int   scanmin2;
-        int   scanmax2;
-        int cc1 = 0;
-        int cc2 = 0;
-        scantree->Branch(("var_name")              ,&coeffname);
-        scantree->Branch(("var_val")              ,&coeffval);
-        scantree->Branch(("var_error")   ,&coefferr);
-        scantree->Branch(("var_name2")              ,&coeffname2);
-        scantree->Branch(("var_val2")              ,&coeffval2);
-        scantree->Branch(("var_error2")   ,&coefferr2);
-        scantree->Branch(("scanmin1"),&scanmin1);
-        scantree->Branch(("scanmax1"),&scanmax1);
-        scantree->Branch(("scanmin2"),&scanmin2);
-        scantree->Branch(("scanmax2"),&scanmax2);
-
-        //creating the branches based on the number of coeffs
-        //for(const auto&& obj1: *coeffs[x.first]){
-        //    vect_coeffval.push_back({}); 
-        //    vect_coefferr.push_back({}); 
-        //    vect_scanmin1.push_back({}); 
-        //    vect_scanmax1.push_back({}); 
-        //    vect_scanmin2.push_back({}); 
-        //    vect_scanmax2.push_back({}); 
-        //for(const auto&& obj2: *coeffs[x.first]){
-        //    string varname = obj2->GetName();
-        //    vect_coeffval[cc1][cc2]=0.0; 
-        //    vect_coefferr[cc1][cc2]=0.0; 
-        //    vect_scanmin1[cc1][cc2]=0.0; 
-        //    vect_scanmax1[cc1][cc2]=0.0; 
-        //    vect_scanmin2[cc1][cc2]=0.0; 
-        //    vect_scanmax2[cc1][cc2]=0.0; 
-        //    //scantree->Branch(varname.c_str()              ,&(coeffval[cc1][cc2]));
-        //    //scantree->Branch((varname+"_error").c_str()   ,&(coefferr[cc1][cc2]));
-        //    //scantree->Branch(("scanmin1_"+varname).c_str(),&(scanmin1[cc1][cc2]));
-        //    //scantree->Branch(("scanmax1_"+varname).c_str(),&(scanmax1[cc1][cc2]));
-        //    //scantree->Branch(("scanmin2_"+varname).c_str(),&(scanmin2[cc1][cc2]));
-        //    //scantree->Branch(("scanmax2_"+varname).c_str(),&(scanmax2[cc1][cc2]));
-        //    cc2++;
-        //}
-        //    cc1++;
-        //}
-
-        //conducting the scans
-        cout<<"number of parameters in fit model "<<coeffs[x.first]->GetSize()<<endl;
-        //if(type.compare("gaussian")!=0){
-        int coeffcount = (int) coeffs[x.first]->GetSize();
-        cc1 = 0;
-        cc2 = 0;
-        for(const auto&& obj1: *coeffs[x.first]){
-            for(int scannum1=0; scannum1 < maxscans; scannum1++){
-                    string varname = obj1->GetName();
-                    ((RooRealVar*) obj1)->setRange( 
-                        coeffMin+scannum1,//shinking the fit space
-                        coeffMax-scannum1
-                        ); 
-                    coeffname = varname;
-                    coeffval=((RooRealVar*)obj1)->getValV();
-                    coefferr=((RooRealVar*)obj1)->getError();
-                    scanmin1=coeffMin+scannum1;
-                    scanmax1=coeffMax-scannum1;
-            for(const auto&& obj2: *coeffs[x.first]){
-                for(int scannum=0; scannum < maxscans; scannum++){
-                    //cout<<"working on coeff "<<coeffcount<<endl;
-                    string varname2 = obj2->GetName();
-                    //cout<<"variable name "<<varname<<endl;
-                    ((RooRealVar*) obj2)->setRange( 
-                        coeffMin+scannum,//shinking the fit space
-                        coeffMax-scannum
-                        ); 
-                    //plotframe[x.first] = poi->frame();
-                    //data->plotOn(plotframe[x.first],Binning(shape_binning));
-                    //finalfitresults[x.first] = x.second->fitTo(
-                    //                        *data,Range(rangeMin,rangeMax), 
-                    //                        Minimizer("Minuit2","migrad"),
-                    //                        Save()
-                    //                    );
-                    x.second->fitTo(
-                                            *data,Range(rangeMin,rangeMax), 
-                                            Minimizer("Minuit2","migrad"),
-                                            Save()
-                                        );
-                    //filling the tree
-                    //vect_coeffval[cc1][cc2]=((RooRealVar*)obj2)->getValV();
-                    //vect_coefferr[cc1][cc2]=((RooRealVar*)obj2)->getError();
-                    //vect_scanmin1[cc1][cc2]=coeffMin+scannum1;
-                    //vect_scanmax1[cc1][cc2]=coeffMax-scannum1;
-                    //vect_scanmin2[cc1][cc2]=coeffMin+scannum;
-                    //vect_scanmax2[cc1][cc2]=coeffMax-scannum;
-                    coeffname2 = varname2;
-                    coeffval2=((RooRealVar*)obj2)->getValV();
-                    coefferr2=((RooRealVar*)obj2)->getError();
-                    scanmin2=coeffMin+scannum;
-                    scanmax2=coeffMax-scannum;
-                    cout<<"coef "<<varname<<" val "<<((RooRealVar*)obj1)->getValV();
-                    cout<<" err "<<((RooRealVar*)obj1)->getError()<<"  ";
-                    cout<<"coef2 "<<varname2<<" val2 "<<((RooRealVar*)obj2)->getValV();
-                    cout<<" err "<<((RooRealVar*)obj1)->getError()<<"  ";
-                    cout<<" range1 "<<to_string(coeffMin+scannum1)<<" "<<to_string(coeffMax-scannum1);
-                    cout<<" range2 "<<to_string(coeffMin+scannum)<<" "<<to_string(coeffMax-scannum)<<endl;
-                    scantree->Fill();
-                    
-                    }//inner scan loop
-                
-                //scanfile<<shape_name+"_"+systematic+","<<x.first<<",";
-                //int truefit=1;
-                //for(const auto&& obj: *coeffs[x.first]){
-                //    string varname = obj->GetName();
-                //    //scanfile<<varname<<","<<coeffMin+1.0*scannum<<","<<coeffMax-1.0*scannum<<",";
-                //    //scanfile<<((RooRealVar*)obj)->getValV()<<",";
-                //    //scanfile<<((RooRealVar*)obj)->getError()<<",";
-                //    if(( abs(((RooRealVar*)obj)->getValV()) > abs(((RooRealVar*)obj)->getError())) &&(((RooRealVar*)obj)->getError()!=0.0) ){
-                //        //scanfile<<"1";
-                //        truefit=truefit*1; 
-                //        }
-                //    else{
-                //        //scanfile<<"0";
-                //        truefit=truefit*0; 
-                //        }
-                //    //scanfile<<",";
-                //    }//for loop for coeffs
-                //scanfile<<to_string(truefit);
-                //scanfile<<endl;
-
-                cc2++;
-                }//for loop coeff
-                }//outer scan loop
-                cc1++;
-                }//for loop coeff
-
-            //if(type.compare("gaussian")==0){
-            //cout<<"running gaussian final fit"<<endl;
-            //for(const auto&& obj: *coeffs[x.first]){
-            //    cout<<"object name "<<obj->GetName()<<endl; 
-            //    cout<<"object class name "<<obj->ClassName()<<endl; 
-            //    obj->Print();
-            //    //lesson ... learned ...type  cast in paranthesis!!
-            //    string varname = obj->GetName();
-            //    cout<<"variable name "<<varname<<endl;
-            //        if(varname.find("sigma") != string::npos)  {
-            //            cout<<"setting variable ranges for sigma"<<endl;
-            //            ((RooRealVar*) obj)->setRange( 
-            //                ((RooRealVar*)obj)->getValV()/2.0,
-            //                ((RooRealVar*)obj)->getValV()*2.0
-            //                ); 
-            //            }
-            //        }
-            //    }
-            //finalfitresults[x.first] = x.second->fitTo(
-            //                        *data,Range(rangeMin,rangeMax), 
-            //                        Minimizer("Minuit2","migrad"),
-            //                        Save()
-            //                    );
-            //finalfitresults[x.first]->Print();
-        //}//gaussian? 
-    scantree->Write(scantree->GetName(),TObject::kOverwrite);
-    }//loop over pdf
-
-    scanfile->Write();
-    scanfile->Close();
-    return;
-}
-void LimitShape::recursiveFitToData(string type)
-{
-    if(recursion>((int)coeffMax)){cout<<"hit max recursion"<<endl; return;}
-    for(auto const& x: pdf){
-        cout<<"working on pdf final fit"<<(x.first).c_str()<<endl;
-        plotframe[x.first] = poi->frame();
-        //data->plotOn(plotframe[x.first],Binning(shape_binning));
-        data->plotOn(plotframe[x.first]);
-        TIter next(coeffs[x.first]); 
-        TObject * obj = 0; //while(obj = next()){
-        cout<<"recursion level "<<to_string(recursion)<<endl;
-        finalfitresults[x.first] = x.second->fitTo(
-                                *data,Range(rangeMin,rangeMax), 
-                                Minimizer("Minuit2","migrad"),
-                                Save()
-                            );
-        cout<<"number of parameters in fit model "<<coeffs[x.first]->GetSize()<<endl;
-        if(type.compare("gaussian")!=0){
-            int coeffcorrectcount = 0;
-            int coeffcount = (int) coeffs[x.first]->GetSize();
-            
-            for(const auto&& obj: *coeffs[x.first]){
-                cout<<"working on coeff "<<coeffcount<<endl;
-                //cout<<"object name "<<obj->GetName()<<endl; 
-                //cout<<"object class name "<<obj->ClassName()<<endl; 
-                //obj->Print();
-                //lesson ... learned ...type  cast in paranthesis!!
-                string varname = obj->GetName();
-                cout<<"variable name "<<varname<<endl;
-                if(( abs(((RooRealVar*)obj)->getValV()) < abs(((RooRealVar*)obj)->getError())) &&(((RooRealVar*)obj)->getError()!=0.0) ){
-                    cout<<"Error too large... shrinking fit"<<endl;
-                    ((RooRealVar*) obj)->setRange( 
-                        //((RooRealVar*)obj)->getValV()/1.50,
-                        //((RooRealVar*)obj)->getValV()*1.50
-                        //((RooRealVar*)obj)->getValV()-1.0*recursion,
-                        //((RooRealVar*)obj)->getValV()+1.0*recursion
-                        coeffMin+1.0*recursion,//shinking the fit space
-                        coeffMax-1.0*recursion
-                        ); 
-                
-                    
-                    }
-                else{
-                        coeffcorrectcount+=1;
-                        cout<<"found good value for parameter!!!!"<<endl;
-                        cout<<"value "<<((RooRealVar*)obj)->getValV()<<endl;
-                        cout<<"error "<<((RooRealVar*)obj)->getError()<<endl;
-                    }
-                }//for loop for coeffs
-
-            if(coeffcorrectcount==coeffcount){
-                cout<<"found best fit for all params!!!!"<<endl;
-                cout<<"exiting recusion ... "<<endl;
-                return;
-                //break;
-                }
-            else{ //recurison block
-                recursion++;
-                LimitShape::recursiveFitToData(type);
-                
-                }
-            }//if for gaussian
-
-        //if(type.compare("gaussian")==0){
-        //cout<<"running gaussian final fit"<<endl;
-        //for(const auto&& obj: *coeffs[x.first]){
-        //    cout<<"object name "<<obj->GetName()<<endl; 
-        //    cout<<"object class name "<<obj->ClassName()<<endl; 
-        //    obj->Print();
-        //    //lesson ... learned ...type  cast in paranthesis!!
-        //    string varname = obj->GetName();
-        //    cout<<"variable name "<<varname<<endl;
-        //        if(varname.find("sigma") != string::npos)  {
-        //            cout<<"setting variable ranges for sigma"<<endl;
-        //            ((RooRealVar*) obj)->setRange( 
-        //                ((RooRealVar*)obj)->getValV()/2.0,
-        //                ((RooRealVar*)obj)->getValV()*2.0
-        //                ); 
-        //            }
-        //        }
-        //    }
-        //finalfitresults[x.first] = x.second->fitTo(
-        //                        *data,Range(rangeMin,rangeMax), 
-        //                        Minimizer("Minuit2","migrad"),
-        //                        Save()
-        //                    );
-        //finalfitresults[x.first]->Print();
-    }//loop over pdf
-
-    return;
-}
 
 void LimitShape::finalFitToData(string type,float sfr)
 {
@@ -934,7 +656,30 @@ void LimitShape::finalFitToData(string type,float sfr)
         //                        Minimizer("Minuit2","migrad"),
         //                        Save()
         //                    );
-        if(type.compare("Bkg")==0 || type.compare("irBkg")==0){
+
+        //if(type.compare("gaussian")==0 || type.compare("voigtian")==0){
+        if(type.compare("gaussian")==0 || type.compare("voigtian")==0 || type.compare("doublegaussian")==0){
+        cout<<"running signal final fit"<<endl;
+        for(const auto&& obj: *coeffs[x.first]){
+            cout<<"object name "<<obj->GetName()<<endl; 
+            cout<<"object class name "<<obj->ClassName()<<endl; 
+            obj->Print();
+            //lesson ... learned ...type  cast in paranthesis!!
+            string varname = obj->GetName();
+            cout<<"variable name "<<varname<<endl;
+                if(varname.find("sigma") != string::npos)  {
+                    cout<<"setting variable ranges for sigma"<<endl;
+                    ((RooRealVar*) obj)->setRange( 
+                        //((RooRealVar*)obj)->getValV()/2.0,
+                        //((RooRealVar*)obj)->getValV()*2.0
+                        ((RooRealVar*)obj)->getValV()/sfr,
+                        ((RooRealVar*)obj)->getValV()*sfr
+                        ); 
+                    }
+                }
+            }
+        //if(type.compare("Bkg")==0 || type.compare("irBkg")==0)//
+        else{
         //if(type.compare("gaussian")!=0){
         for(const auto&& obj: *coeffs[x.first]){
                 //cout<<"object name "<<obj->GetName()<<endl; 
@@ -964,28 +709,6 @@ void LimitShape::finalFitToData(string type,float sfr)
                  //   }
                 }
                 //return;
-            }
-
-        //if(type.compare("gaussian")==0 || type.compare("voigtian")==0){
-        if(type.compare("gaussian")==0 || type.compare("voigtian")==0 || type.compare("doublegaussian")==0){
-        cout<<"running signal final fit"<<endl;
-        for(const auto&& obj: *coeffs[x.first]){
-            cout<<"object name "<<obj->GetName()<<endl; 
-            cout<<"object class name "<<obj->ClassName()<<endl; 
-            obj->Print();
-            //lesson ... learned ...type  cast in paranthesis!!
-            string varname = obj->GetName();
-            cout<<"variable name "<<varname<<endl;
-                if(varname.find("sigma") != string::npos)  {
-                    cout<<"setting variable ranges for sigma"<<endl;
-                    ((RooRealVar*) obj)->setRange( 
-                        //((RooRealVar*)obj)->getValV()/2.0,
-                        //((RooRealVar*)obj)->getValV()*2.0
-                        ((RooRealVar*)obj)->getValV()/sfr,
-                        ((RooRealVar*)obj)->getValV()*sfr
-                        ); 
-                    }
-                }
             }
 
 
@@ -1035,6 +758,8 @@ void LimitShape::printParamsNLLs()
     for(auto const& x:plotframe){
         nllresults<<"chi square "<<x.second->chiSquare()<<endl;
         nllresults<<"ndof "<<coeffs[x.first]->GetSize()<<endl;
+        cout<<"chi square "<<x.second->chiSquare()<<endl;
+        cout<<"ndof "<<coeffs[x.first]->GetSize()<<endl;
     }
     return;
 }
@@ -1085,8 +810,8 @@ void LimitShape::createPlots(string type,int order,string dist)
         //doesn't work with normalization?
         cout<<"normalization "<<normcor<<endl;
         //data->plotOn(plotframe[key],Range(rangeMin,rangeMax),Normalization(norm->getVal()*normcor));
-        data->plotOn(plotframe[key],Range(rangeMin,rangeMax),Normalization(norm->getVal()));
-        //data->plotOn(plotframe[key],Range(rangeMin,rangeMax));
+        //data->plotOn(plotframe[key],Range(rangeMin,rangeMax),Normalization(norm->getVal()));
+        data->plotOn(plotframe[key],Range(rangeMin,rangeMax));
         gStyle->SetOptStat(0); 
         gStyle->SetOptFit(0); 
         cout<<"Plotting signal"<<endl;
@@ -1096,7 +821,8 @@ void LimitShape::createPlots(string type,int order,string dist)
         //        //DrawOption("F"),
         //        FillColor(kOrange)
         //        );
-        pdf[key]->plotOn(plotframe[key],LineColor(kBlue),Range(rangeMin,rangeMax),Normalization(norm->getVal()/normcor));
+        //pdf[key]->plotOn(plotframe[key],LineColor(kBlue),Range(rangeMin,rangeMax),Normalization(norm->getVal()/normcor));
+        pdf[key]->plotOn(plotframe[key],LineColor(kBlue),Range(rangeMin,rangeMax));
         //pdf[key]->plotOn(plotframe[key],LineColor(kBlue),Range(rangeMin,rangeMax));
         //data->plotOn(plotframe[key],Range(rangeMin,rangeMax),Normalization(norm->getVal()/normcor));
         //data->plotOn(plotframe[key],Range(rangeMin,rangeMax));
@@ -1134,7 +860,7 @@ void LimitShape::createPlots(string type,int order,string dist)
         //cout<<"Plotted pdf "<<endl;
         //data->plotOn(plotframe[key],Binning(shape_binning),Range(rangeMin,rangeMax),Normalization(norm->getVal()));
         //pdf[key]->paramOn(plotframe[key],Layout(0.2,0.7,0.8));
-        pdf[key]->paramOn(plotframe[key]);
+        //pdf[key]->paramOn(plotframe[key]);
         //plotframe[key]->getAttText()->SetTextSize(0.02);
         //data->plotOn(plotframe[key],Range(rangeMin,rangeMax));
         cout<<"params set "<<endl;
@@ -1151,7 +877,8 @@ void LimitShape::createPlots(string type,int order,string dist)
         //gStyle->SetStatX(0.9);
         //gStyle->SetStatY(0.5);
         cout<<"normalization "<<normcor<<endl;
-        data->plotOn(plotframe[key],Binning(shape_binning),Range(rangeMin,rangeMax),Normalization(norm->getVal()));
+        //data->plotOn(plotframe[key],Binning(shape_binning),Range(rangeMin,rangeMax),Normalization(norm->getVal()));
+        data->plotOn(plotframe[key],Binning(shape_binning),Range(rangeMin,rangeMax));
         //cout<<"Plotting poly with normalization "<<norm->getVal()<<endl;
         //pdf[key]->plotOn(plotframe[key],
         //        VisualizeError(*finalfitresults[key],1.0,kFALSE),
@@ -1161,13 +888,14 @@ void LimitShape::createPlots(string type,int order,string dist)
         //        FillColor(kOrange)
         //        );
         //doesn't work with normalization?
-        pdf[key]->plotOn(plotframe[key],LineColor(kBlue),Range(rangeMin,rangeMax),Normalization(norm->getVal()/normcor));
+        //pdf[key]->plotOn(plotframe[key],LineColor(kBlue),Range(rangeMin,rangeMax),Normalization(norm->getVal()/normcor));
+        pdf[key]->plotOn(plotframe[key],LineColor(kBlue),Range(rangeMin,rangeMax));
         //pdf[key]->plotOn(plotframe[key],LineColor(kBlue),Range(rangeMin,rangeMax));
         //pdf[key]->plotOn(plotframe[key],LineColor(kBlue),Range(rangeMin,rangeMax));
         //cout<<"Plotted pdf "<<endl;
         //data->plotOn(plotframe[key],Binning(shape_binning),Range(rangeMin,rangeMax),Normalization(norm->getVal()));
         //pdf[key]->paramOn(plotframe[key],Layout(0.2,0.7,0.8));
-        pdf[key]->paramOn(plotframe[key]);
+        //pdf[key]->paramOn(plotframe[key]);
         //plotframe[key]->getAttText()->SetTextSize(0.02);
         //data->plotOn(plotframe[key],Range(rangeMin,rangeMax));
         cout<<"params set "<<endl;
